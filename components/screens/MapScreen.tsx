@@ -1,29 +1,23 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import {
-  Share2,
-  Clock,
-  Mountain,
-  Coffee,
-  Camera,
-  Car,
-  Trees,
-} from "lucide-react";
+import { Share2, Camera, Coffee, Car, Trees, Check, MapPin } from "lucide-react";
 import AppHeader from "../AppHeader";
-import { routeStops, IMG } from "../data";
-
-const stopIcon = { hike: Mountain, cafe: Coffee, view: Camera };
+import SylhetMap from "../SylhetMap";
+import { usePlaces, ICONS } from "../places";
 
 const attractions = [
-  { Icon: Camera, label: "Viewpoint", top: "13%", left: "22%" },
-  { Icon: Coffee, label: "Tea Cafe", top: "46%", left: "40%" },
-  { Icon: Trees, label: "Swamp Forest", top: "73%", left: "66%" },
+  { Icon: Trees, label: "আগুন পাহাড়", top: "16%", left: "20%" },
+  { Icon: Coffee, label: "মালনীছড়া চা বাগান", top: "48%", left: "40%" },
+  { Icon: Camera, label: "রাতারগুল", top: "74%", left: "60%" },
 ];
 
 export default function MapScreen() {
   const stageRef = useRef<HTMLDivElement>(null);
   const d3Ref = useRef<HTMLDivElement>(null);
+  const { places } = usePlaces();
+  const done = places.filter((p) => p.done).length;
+  const upcoming = places.filter((p) => !p.done).slice(0, 3);
 
   // pointer + idle-drift parallax → CSS vars --px/--py on the 3D plane
   useEffect(() => {
@@ -72,12 +66,7 @@ export default function MapScreen() {
 
       <div className="map-stage" ref={stageRef}>
         <div className="map-3d" ref={d3Ref}>
-          <img
-            className="map-img layer"
-            src={IMG.map}
-            alt="Expedition terrain"
-            onError={(e) => (e.currentTarget.style.display = "none")}
-          />
+          <SylhetMap className="map-base layer" />
           <div className="layer map-terrain-glow" />
 
           <svg
@@ -121,56 +110,66 @@ export default function MapScreen() {
           ))}
         </div>
 
-        <div className="map-tag">SKYLINE TRAIL</div>
+        <div className="map-tag">সিলেট রুট</div>
 
         <div className="map-badge">
           <span className="dot-car">
             <Car size={15} />
           </span>
-          14.2 KM
+          240 KM
           <span style={{ opacity: 0.4 }}>|</span>
-          26 min
+          5h drive
         </div>
       </div>
 
       <div className="route-head">
         <div>
-          <div className="title">Daily Route</div>
-          <div className="sub">Dhaka to Sylhet Expedition</div>
+          <div className="title">Next Stops</div>
+          <div className="sub">
+            {done} of {places.length} explored
+          </div>
         </div>
         <button className="icon-btn" aria-label="Share route">
           <Share2 size={18} />
         </button>
       </div>
 
-      <div className="stack">
-        {routeStops.map((s, i) => {
-          const Icon = stopIcon[s.icon];
-          return (
-            <div
-              className="stop rise"
-              key={s.id}
-              style={{ animationDelay: `${0.15 + i * 0.09}s` }}
-            >
-              <div className="stop-rail">
-                <span className={`stop-dot ${i > 0 ? "hollow" : ""}`} />
-                {i < routeStops.length - 1 && <span className="stop-line" />}
-              </div>
-              <div className="stop-card">
-                <span className="stop-ico">
-                  <Icon size={20} />
-                </span>
-                <div className="stop-info">
-                  <div className="name">{s.name}</div>
-                  <div className="meta">
-                    <Clock size={13} /> {s.meta}
+      <div className="stack-lg">
+        {upcoming.length === 0 ? (
+          <div className="card list-card">
+            <div className="empty sm">
+              <Check size={26} />
+              <p>All stops explored! 🎉 Add more in Trip Plan.</p>
+            </div>
+          </div>
+        ) : (
+          upcoming.map((p, i) => {
+            const Icon = ICONS[p.icon] ?? MapPin;
+            return (
+              <div
+                className="stop rise"
+                key={p.id}
+                style={{ animationDelay: `${0.12 + i * 0.05}s` }}
+              >
+                <div className="stop-rail">
+                  <span className="stop-dot hollow" />
+                  {i < upcoming.length - 1 && <span className="stop-line" />}
+                </div>
+                <div className="stop-card view-only">
+                  <span className="stop-ico">
+                    <Icon size={20} />
+                  </span>
+                  <div className="stop-info">
+                    <div className="name">{p.name}</div>
+                    <div className="meta">
+                      <MapPin size={13} /> {p.area}
+                    </div>
                   </div>
                 </div>
-                <div className="stop-time num">{s.time}</div>
               </div>
-            </div>
-          );
-        })}
+            );
+          })
+        )}
       </div>
     </div>
   );

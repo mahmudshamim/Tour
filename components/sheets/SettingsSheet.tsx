@@ -11,13 +11,12 @@ import {
   Eraser,
 } from "lucide-react";
 import { initials } from "../constants";
-import { useStore, useMoney } from "../store";
+import { useStore } from "../store";
 import { useUI } from "../ui";
 
 export default function SettingsSheet() {
   const {
     state,
-    pool,
     configured,
     syncing,
     addMember,
@@ -27,7 +26,6 @@ export default function SettingsSheet() {
     seedSample,
     clearAll,
   } = useStore();
-  const money = useMoney();
   const { close, openLog } = useUI();
   const s = state.settings;
 
@@ -65,27 +63,16 @@ export default function SettingsSheet() {
             />
           </div>
         </div>
-        <div className="field-row">
-          <div>
-            <label className="mini-label">Pool (from deposits)</label>
-            <div className="input compact pool-box">
-              <span className="cur">{s.currency}</span>
-              <span className="num pool-val">
-                {pool.toLocaleString("en-US", { minimumFractionDigits: 2 })}
-              </span>
-            </div>
-          </div>
-          <div>
-            <label className="mini-label">Currency</label>
-            <div className="input compact">
-              <input
-                value={s.currency}
-                maxLength={3}
-                onChange={(e) =>
-                  updateSettings({ currency: e.target.value || "৳" })
-                }
-              />
-            </div>
+        <div className="field">
+          <label className="mini-label">Currency</label>
+          <div className="input compact cur-field">
+            <input
+              value={s.currency}
+              maxLength={3}
+              onChange={(e) =>
+                updateSettings({ currency: e.target.value || "৳" })
+              }
+            />
           </div>
         </div>
 
@@ -153,24 +140,26 @@ export default function SettingsSheet() {
         })}
 
         <div className="add-member">
-          <div className="input compact flex1">
-            <UserPlus size={17} />
-            <input
-              placeholder="Name"
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && add()}
-            />
-          </div>
-          <div className="input compact depo-add">
-            <span className="cur sm">{s.currency}</span>
-            <input
-              placeholder="Deposit"
-              inputMode="decimal"
-              value={newAmt}
-              onChange={(e) => setNewAmt(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && add()}
-            />
+          <div className="add-fields">
+            <div className="input compact flex1">
+              <UserPlus size={17} />
+              <input
+                placeholder="Name"
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && add()}
+              />
+            </div>
+            <div className="input compact depo-add">
+              <span className="cur sm">{s.currency}</span>
+              <input
+                placeholder="Deposit"
+                inputMode="decimal"
+                value={newAmt}
+                onChange={(e) => setNewAmt(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && add()}
+              />
+            </div>
           </div>
           <button className="add-btn" onClick={add} aria-label="Add person">
             <Check size={18} />

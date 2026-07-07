@@ -1,6 +1,6 @@
 "use client";
 
-import { Sun, Route, Users, Plus, Clock, MapPin, Receipt } from "lucide-react";
+import { Clock, MapPin, Receipt } from "lucide-react";
 import AppHeader from "../AppHeader";
 import TxnRow from "../TxnRow";
 import { IMG } from "../data";
@@ -15,23 +15,18 @@ const C = 2 * Math.PI * R;
 export default function Dashboard() {
   const { state, totalSpent, pool, balances } = useStore();
   const money = useMoney();
-  const { openAdd, openTransactions } = useUI();
+  const { openTransactions } = useUI();
 
   const budget = pool;
   const pct = budget > 0 ? Math.min(totalSpent / budget, 1) : 0;
   const pctLabel = budget > 0 ? Math.round(pct * 100) : 0;
   const remaining = budget - totalSpent;
 
-  const selfNet = balances.balance[state.settings.selfId] ?? 0;
-  const owes = selfNet < -0.005;
-  const balLabel = owes ? "You overspent" : "Your balance left";
-
   const mounted = useMounted();
   const aPct = useCountUp(pctLabel);
   const aBudget = useCountUp(budget);
   const aSpent = useCountUp(totalSpent);
   const aRemaining = useCountUp(remaining);
-  const aNet = useCountUp(selfNet);
 
   const recent = [...state.txns]
     .sort((a, b) => b.createdAt - a.createdAt)
@@ -124,56 +119,9 @@ export default function Dashboard() {
               <Clock size={13} /> 08:30 AM
             </span>
             <span>
-              <MapPin size={13} /> Sreemangal
+              <MapPin size={13} /> Sylhet
             </span>
           </div>
-        </div>
-      </div>
-
-      <div className="section-pad">
-        <div className="section-head">
-          <div className="section-title">Quick Stats</div>
-        </div>
-      </div>
-
-      <div>
-        <div className="card qstat rise" style={{ animationDelay: "0.05s" }}>
-          <span className="q-ico sand">
-            <Sun size={22} />
-          </span>
-          <div className="q-info">
-            <div className="q-lbl">Weather</div>
-            <div className="q-val num">
-              31°C <small>Humid</small>
-            </div>
-          </div>
-        </div>
-
-        <div className="card qstat rise" style={{ animationDelay: "0.12s" }}>
-          <span className="q-ico sky">
-            <Route size={22} />
-          </span>
-          <div className="q-info">
-            <div className="q-lbl">Distance</div>
-            <div className="q-val num">
-              45 KM <small>Total Covered</small>
-            </div>
-          </div>
-        </div>
-
-        <div className="card qstat rise" style={{ animationDelay: "0.19s" }}>
-          <span className="q-ico green">
-            <Users size={22} />
-          </span>
-          <div className="q-info">
-            <div className="q-lbl">Balance</div>
-            <div className="q-val num">
-              {money(aNet)} <small>{balLabel}</small>
-            </div>
-          </div>
-          <button className="q-plus" onClick={openAdd} aria-label="Add expense">
-            <Plus size={20} />
-          </button>
         </div>
       </div>
 
@@ -203,7 +151,10 @@ export default function Dashboard() {
                   <div className="spend-info">
                     <div className="spend-top">
                       <span className="spend-name">{m.name}</span>
-                      <span className="spend-amt num">{money(spent)}</span>
+                      <span className={`spend-remain num ${over ? "neg" : ""}`}>
+                        {over ? `−${money(Math.abs(bal))}` : money(bal)}
+                        <small>{over ? "over" : "left"}</small>
+                      </span>
                     </div>
                     <div className="spend-bar">
                       <i
@@ -212,13 +163,12 @@ export default function Dashboard() {
                       />
                     </div>
                     <div className="spend-sub">
-                      {over ? (
-                        <span className="over-txt">
-                          over by {money(Math.abs(bal))}
-                        </span>
-                      ) : (
-                        <>{money(bal)} left of {money(dep)}</>
-                      )}
+                      <span className="s-spent num">
+                        Spent {money(spent)}
+                      </span>
+                      <span className="s-total num">
+                        {Math.round(frac * 100)}% of {money(dep)}
+                      </span>
                     </div>
                   </div>
                 </div>

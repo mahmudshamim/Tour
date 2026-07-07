@@ -52,7 +52,7 @@ export const EMPTY: State = {
   members: [],
   txns: [],
   audit: [],
-  settings: { tripName: "", budget: 0, currency: "৳", selfId: "" },
+  settings: { tripName: "Sylhet", budget: 0, currency: "৳", selfId: "" },
 };
 
 export const uid = (): string =>

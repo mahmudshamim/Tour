@@ -5,6 +5,7 @@ import { Plus } from "lucide-react";
 import type { Tab } from "@/components/types";
 import { ThemeProvider, useTheme } from "@/components/theme";
 import { StoreProvider, useStore } from "@/components/store";
+import { PlacesProvider } from "@/components/places";
 import { UIProvider, useUI } from "@/components/ui";
 import TripMark from "@/components/TripMark";
 import IntroScreen from "@/components/IntroScreen";
@@ -74,9 +75,11 @@ export default function Home() {
   return (
     <ThemeProvider>
       <StoreProvider>
-        <UIProvider>
-          <Shell />
-        </UIProvider>
+        <PlacesProvider>
+          <UIProvider>
+            <Shell />
+          </UIProvider>
+        </PlacesProvider>
       </StoreProvider>
     </ThemeProvider>
   );

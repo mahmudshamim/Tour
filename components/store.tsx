@@ -37,11 +37,13 @@ function loadCache(): State | null {
     const raw = localStorage.getItem(KEY);
     if (!raw) return null;
     const p = JSON.parse(raw) as Partial<State>;
+    const settings = { ...EMPTY.settings, ...(p.settings ?? {}) };
+    if (!settings.tripName) settings.tripName = "Sylhet";
     return {
       members: p.members ?? [],
       txns: p.txns ?? [],
       audit: p.audit ?? [],
-      settings: { ...EMPTY.settings, ...(p.settings ?? {}) },
+      settings,
     };
   } catch {
     return null;

@@ -106,6 +106,7 @@ export async function loadState(): Promise<
     let s = settings.data
       ? rowToSettings(settings.data)
       : EMPTY.settings;
+    if (!s.tripName) s = { ...s, tripName: "Sylhet" };
     if (!settings.data) {
       await sb.from("app_settings").upsert(settingsToRow(EMPTY.settings));
     }
