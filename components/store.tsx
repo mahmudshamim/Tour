@@ -144,6 +144,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     let alive = true;
     const cached = loadCache();
     if (cached) dispatch({ type: "setAll", state: cached });
+    // paint immediately from cache (or empty); sync with Supabase in background
+    setReady(true);
 
     (async () => {
       if (dbConfigured) {
@@ -157,7 +159,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         }
         if (alive) setSyncing(false);
       }
-      if (alive) setReady(true);
     })();
 
     // realtime: refetch on any remote change

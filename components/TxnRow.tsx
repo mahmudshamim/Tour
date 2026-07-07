@@ -4,7 +4,7 @@ import { catIcon } from "./constants";
 import { useStore, useMoney, type Txn } from "./store";
 import { useUI } from "./ui";
 
-export default function TxnRow({ txn }: { txn: Txn }) {
+export default function TxnRow({ txn, index = 0 }: { txn: Txn; index?: number }) {
   const { memberById, state } = useStore();
   const money = useMoney();
   const { openDetail } = useUI();
@@ -16,7 +16,11 @@ export default function TxnRow({ txn }: { txn: Txn }) {
     payer?.id === self ? "Paid by You" : `Paid by ${payer?.name ?? "—"}`;
 
   return (
-    <button className="activity tappable" onClick={() => openDetail(txn)}>
+    <button
+      className="activity tappable rise"
+      style={{ animationDelay: `${index * 0.07}s` }}
+      onClick={() => openDetail(txn)}
+    >
       <span className="a-ico">
         <Icon size={20} />
       </span>

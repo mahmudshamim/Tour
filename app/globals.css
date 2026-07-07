@@ -1799,3 +1799,324 @@ input {
 .db-status.off .db-dot {
   background: var(--amber);
 }
+
+/* ============================================================
+   Motion — keyframes + interactive polish
+   ============================================================ */
+
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes popIn {
+  from {
+    opacity: 0;
+    transform: scale(0.86);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@keyframes floaty {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+@keyframes drawTrail {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes travel {
+  from {
+    offset-distance: 0%;
+  }
+  to {
+    offset-distance: 100%;
+  }
+}
+@keyframes pulseRing {
+  0% {
+    transform: translate(-50%, -50%) scale(0.6);
+    opacity: 0.8;
+  }
+  70% {
+    opacity: 0;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(2.4);
+    opacity: 0;
+  }
+}
+@keyframes spinSlow {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Stagger-in list items: set style={{ animationDelay }} per index */
+.rise {
+  animation: fadeUp 0.5s both cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+/* Card press feedback everywhere */
+.card,
+.activity.tappable,
+.qstat,
+.member {
+  transition: transform 0.18s ease, box-shadow 0.18s ease,
+    background 0.18s ease;
+}
+.activity.tappable:active,
+.card.press:active {
+  transform: scale(0.985);
+}
+
+/* Ring + progress animated fills */
+.ring-progress {
+  transition: stroke-dashoffset 1.2s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+.progress > i {
+  transition: width 1.1s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+/* Bottom-nav sliding indicator */
+.tabbar {
+  position: relative;
+}
+.tab-indicator {
+  position: absolute;
+  top: 8px;
+  left: 12px;
+  width: calc((100% - 24px) / 4);
+  height: 44px;
+  border-radius: 14px;
+  background: radial-gradient(
+    120% 120% at 50% 30%,
+    var(--accent-soft),
+    transparent 75%
+  );
+  transform: translateX(calc(var(--idx, 0) * 100%));
+  transition: transform 0.38s cubic-bezier(0.34, 1.4, 0.64, 1);
+  pointer-events: none;
+  z-index: 0;
+}
+.tab {
+  position: relative;
+  z-index: 1;
+}
+.tab .tab-ico {
+  transition: transform 0.28s cubic-bezier(0.34, 1.5, 0.64, 1);
+}
+.tab.active .tab-ico {
+  transform: translateY(-2px) scale(1.08);
+}
+
+/* FAB idle breathe + ripple on press */
+.fab-global {
+  animation: floaty 4.5s ease-in-out infinite;
+}
+.fab-global::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  box-shadow: 0 0 0 0 var(--green-glow);
+  transition: box-shadow 0.5s ease;
+}
+.fab-global:active::after {
+  box-shadow: 0 0 0 14px transparent;
+}
+
+/* ============================================================
+   3D Map scene
+   ============================================================ */
+
+.map-stage {
+  position: relative;
+  margin: 4px var(--pad) 0;
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  aspect-ratio: 1 / 0.94;
+  background: linear-gradient(160deg, #16241d, #0b120e);
+  perspective: 1100px;
+  perspective-origin: 50% 40%;
+  cursor: grab;
+}
+.map-stage:active {
+  cursor: grabbing;
+}
+.map-3d {
+  position: absolute;
+  inset: -8%;
+  transform-style: preserve-3d;
+  transform: rotateX(calc(var(--py, 0) * -7deg))
+    rotateY(calc(var(--px, 0) * 9deg));
+  transition: transform 0.15s ease-out;
+}
+.map-3d .layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.map-img.layer {
+  object-fit: cover;
+  opacity: 0.95;
+  transform: translate3d(
+      calc(var(--px, 0) * -12px),
+      calc(var(--py, 0) * -12px),
+      -40px
+    )
+    scale(1.16);
+}
+.map-terrain-glow {
+  background: radial-gradient(
+      70% 55% at 50% 42%,
+      rgba(74, 222, 128, 0.16),
+      transparent 70%
+    );
+  mix-blend-mode: screen;
+}
+.map-svg.layer {
+  transform: translate3d(
+    calc(var(--px, 0) * -20px),
+    calc(var(--py, 0) * -20px),
+    20px
+  );
+  overflow: visible;
+}
+.route-glow {
+  fill: none;
+  stroke: #4ade80;
+  stroke-width: 9;
+  stroke-linecap: round;
+  opacity: 0.35;
+  filter: blur(6px);
+}
+.route-path {
+  fill: none;
+  stroke: url(#trail);
+  stroke-width: 4;
+  stroke-linecap: round;
+  stroke-dasharray: 1400;
+  stroke-dashoffset: 1400;
+  animation: drawTrail 2.6s cubic-bezier(0.4, 0, 0.2, 1) 0.25s forwards;
+}
+.traveler {
+  offset-path: path(
+    "M60 40 C 120 70, 90 140, 170 160 S 300 200, 300 280"
+  );
+  offset-rotate: 0deg;
+  animation: travel 6.5s cubic-bezier(0.5, 0, 0.5, 1) 2.4s infinite;
+}
+.traveler circle {
+  fill: #eafff2;
+  filter: drop-shadow(0 0 6px #4ade80) drop-shadow(0 0 12px #22c55e);
+}
+
+.map-pin {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--green-bright);
+  border: 3px solid #08120a;
+  box-shadow: 0 0 0 3px rgba(74, 222, 128, 0.4), 0 0 16px var(--green-glow);
+  transform: translate3d(
+    calc(var(--px, 0) * -26px),
+    calc(var(--py, 0) * -26px),
+    40px
+  );
+  z-index: 3;
+}
+.map-pin::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2px solid var(--green-bright);
+  transform: translate(-50%, -50%);
+  animation: pulseRing 2.2s ease-out infinite;
+}
+
+/* Floating attraction discovery chips */
+.attraction {
+  position: absolute;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 9px 5px 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #eafff2;
+  background: rgba(10, 18, 12, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  transform: translate3d(
+    calc(var(--px, 0) * -30px),
+    calc(var(--py, 0) * -30px),
+    60px
+  );
+  z-index: 4;
+  animation: popIn 0.5s both, floaty 5s ease-in-out infinite;
+  white-space: nowrap;
+}
+.attraction .a-emoji {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--green-deep);
+  color: #eafff2;
+}
+
+.map-tag {
+  z-index: 5;
+}
+.map-badge {
+  z-index: 5;
+  animation: floaty 4s ease-in-out infinite;
+}
+
+/* Route stop rows — interactive */
+.stop-card {
+  cursor: pointer;
+  transition: transform 0.18s ease, border-color 0.18s ease,
+    background 0.18s ease;
+}
+.stop-card:active {
+  transform: scale(0.98);
+}
+.stop-card:hover {
+  border-color: var(--border-strong);
+}
+
+/* Respect reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}

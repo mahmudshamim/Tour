@@ -1,5 +1,6 @@
 "use client";
 
+import type { CSSProperties } from "react";
 import { LayoutGrid, Map, CalendarRange, Users } from "lucide-react";
 import type { Tab } from "./types";
 
@@ -17,8 +18,13 @@ export default function BottomNav({
   active: Tab;
   onChange: (t: Tab) => void;
 }) {
+  const idx = tabs.findIndex((t) => t.id === active);
   return (
-    <nav className="tabbar">
+    <nav
+      className="tabbar"
+      style={{ "--idx": idx < 0 ? 0 : idx } as CSSProperties}
+    >
+      <span className="tab-indicator" />
       {tabs.map(({ id, label, Icon }) => (
         <button
           key={id}

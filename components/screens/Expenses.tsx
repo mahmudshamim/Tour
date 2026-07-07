@@ -6,6 +6,7 @@ import TxnRow from "../TxnRow";
 import { initials } from "../constants";
 import { useStore, useMoney } from "../store";
 import { useUI } from "../ui";
+import { useCountUp, useMounted } from "../hooks";
 
 export default function Expenses() {
   const { state, totalSpent, balances } = useStore();
@@ -15,6 +16,9 @@ export default function Expenses() {
   const budget = state.settings.budget;
   const pct = budget > 0 ? Math.min(Math.round((totalSpent / budget) * 100), 100) : 0;
   const self = state.settings.selfId;
+
+  const mounted = useMounted();
+  const aTotal = useCountUp(totalSpent);
 
   const recent = [...state.txns]
     .sort((a, b) => b.createdAt - a.createdAt)
@@ -27,13 +31,13 @@ export default function Expenses() {
       <div className="card summary-card">
         <div className="eyebrow">Total Spent</div>
         <div className="summary-amt num">
-          {money(totalSpent)}
+          {money(aTotal)}
           {budget > 0 && <span className="of">of {money(budget)}</span>}
         </div>
         {budget > 0 ? (
           <>
             <div className="progress">
-              <i style={{ width: `${pct}%` }} />
+              <i style={{ width: `${mounted ? pct : 0}%` }} />
             </div>
             <div className="progress-legend">
               <span className="used">{pct}% USED</span>
@@ -72,7 +76,7 @@ export default function Expenses() {
         </div>
       ) : (
         <div className="card list-card">
-          {state.members.map((m) => {
+          {state.members.map((m, i) => {
             const net = balances.net[m.id] ?? 0;
             const paid = balances.paid[m.id] ?? 0;
             const owed = net > 0.005;
@@ -89,7 +93,11 @@ export default function Expenses() {
               ? `Owes ${money(net)}`
               : "Settle up";
             return (
-              <div className="member" key={m.id}>
+              <div
+                className="member rise"
+                key={m.id}
+                style={{ animationDelay: `${i * 0.08}s` }}
+              >
                 <span className="m-avatar" style={{ background: m.color }}>
                   {initials(m.name)}
                 </span>
@@ -127,7 +135,7 @@ export default function Expenses() {
             <p>No expenses logged. Use the + button to add one.</p>
           </div>
         ) : (
-          recent.map((t) => <TxnRow key={t.id} txn={t} />)
+          recent.map((t, i) => <TxnRow key={t.id} txn={t} index={i} />)
         )}
       </div>
     </div>

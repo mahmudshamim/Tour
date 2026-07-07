@@ -6,6 +6,7 @@ import TxnRow from "../TxnRow";
 import { IMG } from "../data";
 import { useStore, useMoney } from "../store";
 import { useUI } from "../ui";
+import { useCountUp, useMounted } from "../hooks";
 
 const R = 74;
 const C = 2 * Math.PI * R;
@@ -24,6 +25,13 @@ export default function Dashboard() {
   const owed = selfNet > 0.005;
   const owes = selfNet < -0.005;
   const balLabel = owed ? "You are owed" : owes ? "You owe" : "All settled";
+
+  const mounted = useMounted();
+  const aPct = useCountUp(pctLabel);
+  const aBudget = useCountUp(budget);
+  const aSpent = useCountUp(totalSpent);
+  const aRemaining = useCountUp(remaining);
+  const aNet = useCountUp(selfNet);
 
   const recent = [...state.txns]
     .sort((a, b) => b.createdAt - a.createdAt)
@@ -56,6 +64,7 @@ export default function Dashboard() {
               </defs>
               <circle cx="84" cy="84" r={R} fill="none" stroke="var(--track)" strokeWidth="12" />
               <circle
+                className="ring-progress"
                 cx="84"
                 cy="84"
                 r={R}
@@ -64,12 +73,12 @@ export default function Dashboard() {
                 strokeWidth="12"
                 strokeLinecap="round"
                 strokeDasharray={C}
-                strokeDashoffset={C * (1 - pct)}
+                strokeDashoffset={C * (1 - (mounted ? pct : 0))}
                 style={{ filter: "drop-shadow(0 0 6px rgba(74,222,128,.5))" }}
               />
             </svg>
             <div className="ring-center">
-              <div className="pct num">{pctLabel}%</div>
+              <div className="pct num">{Math.round(aPct)}%</div>
               <div className="lbl">SPENT</div>
             </div>
           </div>
@@ -78,18 +87,18 @@ export default function Dashboard() {
         <div className="budget-total">
           <span className="eyebrow">Total Budget</span>
           <div className="amt num">
-            {budget > 0 ? money(budget) : "Not set"}
+            {budget > 0 ? money(aBudget) : "Not set"}
           </div>
         </div>
 
         <div className="stat-split">
           <div className="stat-cell">
             <div className="eyebrow">Spent</div>
-            <div className="val green num">{money(totalSpent)}</div>
+            <div className="val green num">{money(aSpent)}</div>
           </div>
           <div className="stat-cell">
             <div className="eyebrow">Remaining</div>
-            <div className="val num">{budget > 0 ? money(remaining) : "—"}</div>
+            <div className="val num">{budget > 0 ? money(aRemaining) : "—"}</div>
           </div>
         </div>
       </div>
@@ -128,7 +137,7 @@ export default function Dashboard() {
       </div>
 
       <div>
-        <div className="card qstat">
+        <div className="card qstat rise" style={{ animationDelay: "0.05s" }}>
           <span className="q-ico sand">
             <Sun size={22} />
           </span>
@@ -140,7 +149,7 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <div className="card qstat">
+        <div className="card qstat rise" style={{ animationDelay: "0.12s" }}>
           <span className="q-ico sky">
             <Route size={22} />
           </span>
@@ -152,14 +161,14 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <div className="card qstat">
+        <div className="card qstat rise" style={{ animationDelay: "0.19s" }}>
           <span className="q-ico green">
             <Users size={22} />
           </span>
           <div className="q-info">
             <div className="q-lbl">Balance</div>
             <div className="q-val num">
-              {money(selfNet)} <small>{balLabel}</small>
+              {money(aNet)} <small>{balLabel}</small>
             </div>
           </div>
           <button className="q-plus" onClick={openAdd} aria-label="Add expense">
@@ -186,7 +195,7 @@ export default function Dashboard() {
             <p>No expenses yet. Tap + to log your first one.</p>
           </div>
         ) : (
-          recent.map((t) => <TxnRow key={t.id} txn={t} />)
+          recent.map((t, i) => <TxnRow key={t.id} txn={t} index={i} />)
         )}
       </div>
     </div>
