@@ -5,15 +5,17 @@ import { useStore, useMoney, type Txn } from "./store";
 import { useUI } from "./ui";
 
 export default function TxnRow({ txn, index = 0 }: { txn: Txn; index?: number }) {
-  const { memberById, state } = useStore();
+  const { memberById } = useStore();
   const money = useMoney();
   const { openDetail } = useUI();
   const Icon = catIcon(txn.category);
-  const payer = memberById(txn.paidBy);
-  const self = state.settings.selfId;
-  const perHead = txn.split.length ? txn.amount / txn.split.length : 0;
-  const paidLabel =
-    payer?.id === self ? "Paid by You" : `Paid by ${payer?.name ?? "—"}`;
+  const isGroup = txn.kind === "group";
+  const perHead =
+    isGroup && txn.split.length ? txn.amount / txn.split.length : 0;
+  const chargedTo = memberById(txn.member);
+  const label = isGroup
+    ? `Group · Split ${txn.split.length} · ${money(perHead)} each`
+    : `Personal · ${chargedTo?.name ?? "—"}`;
 
   return (
     <button
@@ -30,8 +32,12 @@ export default function TxnRow({ txn, index = 0 }: { txn: Txn; index?: number })
           <span className="a-amt num">{money(txn.amount)}</span>
         </div>
         <div className="a-sub">
-          {paidLabel} · <span className="split">Split {txn.split.length}</span>{" "}
-          · {money(perHead)} each
+          <span className={`tag-pill ${isGroup ? "grp" : "per"}`}>
+            {isGroup ? "GROUP" : "PERSONAL"}
+          </span>
+          {isGroup
+            ? `Split ${txn.split.length} · ${money(perHead)} each`
+            : chargedTo?.name ?? "—"}
         </div>
       </div>
     </button>

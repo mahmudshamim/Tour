@@ -4,16 +4,20 @@ export type Member = {
   id: string;
   name: string;
   color: string;
+  contribution: number; // tk this person deposited into the pool
   createdAt: number;
 };
+
+export type TxnKind = "group" | "personal";
 
 export type Txn = {
   id: string;
   title: string;
   amount: number;
   category: CategoryId;
-  paidBy: string;
-  split: string[];
+  kind: TxnKind; // group = split from pool, personal = one member's own spend
+  split: string[]; // group: members who share (default all)
+  member: string; // personal: the member charged
   createdAt: number;
   updatedAt: number;
 };
@@ -32,7 +36,7 @@ export type AuditEntry = {
 
 export type Settings = {
   tripName: string;
-  budget: number;
+  budget: number; // kept for compatibility; pool is derived from contributions
   currency: string;
   selfId: string;
 };
@@ -57,28 +61,44 @@ export const uid = (): string =>
     : Math.random().toString(36).slice(2) + Date.now().toString(36);
 
 export type Balances = {
-  net: Record<string, number>;
-  paid: Record<string, number>;
+  balance: Record<string, number>; // remaining tk of each member (contribution - spent)
+  spent: Record<string, number>; // total charged to each member
+  pool: number; // sum of all contributions (= budget)
 };
 
+/**
+ * Pool model:
+ *  - each member deposits `contribution` → pool
+ *  - group expense: split equally among `split` members (deducts from each)
+ *  - personal expense: charged fully to `member`
+ *  - balance[m] = contribution[m] − (group shares) − (personal charges)
+ */
 export function computeBalances(members: Member[], txns: Txn[]): Balances {
-  const net: Record<string, number> = {};
-  const paid: Record<string, number> = {};
+  const balance: Record<string, number> = {};
+  const spent: Record<string, number> = {};
+  let pool = 0;
   members.forEach((m) => {
-    net[m.id] = 0;
-    paid[m.id] = 0;
+    balance[m.id] = m.contribution || 0;
+    spent[m.id] = 0;
+    pool += m.contribution || 0;
   });
   txns.forEach((t) => {
-    if (net[t.paidBy] !== undefined) {
-      net[t.paidBy] += t.amount;
-      paid[t.paidBy] += t.amount;
+    if (t.kind === "personal") {
+      if (balance[t.member] !== undefined) {
+        balance[t.member] -= t.amount;
+        spent[t.member] += t.amount;
+      }
+      return;
     }
-    const parts = t.split.filter((id) => net[id] !== undefined);
+    const parts = t.split.filter((id) => balance[id] !== undefined);
     const k = parts.length || 1;
     const share = t.amount / k;
-    parts.forEach((id) => (net[id] -= share));
+    parts.forEach((id) => {
+      balance[id] -= share;
+      spent[id] += share;
+    });
   });
-  return { net, paid };
+  return { balance, spent, pool };
 }
 
 export function diff(
@@ -96,8 +116,10 @@ export function diff(
     });
   if (a.category !== b.category)
     out.push({ field: "category", from: a.category, to: b.category });
-  if (a.paidBy !== b.paidBy)
-    out.push({ field: "paidBy", from: a.paidBy, to: b.paidBy });
+  if (a.kind !== b.kind)
+    out.push({ field: "kind", from: a.kind, to: b.kind });
+  if (a.member !== b.member)
+    out.push({ field: "member", from: a.member || "—", to: b.member || "—" });
   if (a.split.join(",") !== b.split.join(","))
     out.push({
       field: "split",

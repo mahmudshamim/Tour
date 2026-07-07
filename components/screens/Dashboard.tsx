@@ -4,6 +4,7 @@ import { Sun, Route, Users, Plus, Clock, MapPin, Receipt } from "lucide-react";
 import AppHeader from "../AppHeader";
 import TxnRow from "../TxnRow";
 import { IMG } from "../data";
+import { initials } from "../constants";
 import { useStore, useMoney } from "../store";
 import { useUI } from "../ui";
 import { useCountUp, useMounted } from "../hooks";
@@ -12,19 +13,18 @@ const R = 74;
 const C = 2 * Math.PI * R;
 
 export default function Dashboard() {
-  const { state, totalSpent, balances } = useStore();
+  const { state, totalSpent, pool, balances } = useStore();
   const money = useMoney();
   const { openAdd, openTransactions } = useUI();
 
-  const budget = state.settings.budget;
+  const budget = pool;
   const pct = budget > 0 ? Math.min(totalSpent / budget, 1) : 0;
   const pctLabel = budget > 0 ? Math.round(pct * 100) : 0;
   const remaining = budget - totalSpent;
 
-  const selfNet = balances.net[state.settings.selfId] ?? 0;
-  const owed = selfNet > 0.005;
+  const selfNet = balances.balance[state.settings.selfId] ?? 0;
   const owes = selfNet < -0.005;
-  const balLabel = owed ? "You are owed" : owes ? "You owe" : "All settled";
+  const balLabel = owes ? "You overspent" : "Your balance left";
 
   const mounted = useMounted();
   const aPct = useCountUp(pctLabel);
@@ -85,9 +85,9 @@ export default function Dashboard() {
         </div>
 
         <div className="budget-total">
-          <span className="eyebrow">Total Budget</span>
+          <span className="eyebrow">Total Pool</span>
           <div className="amt num">
-            {budget > 0 ? money(aBudget) : "Not set"}
+            {budget > 0 ? money(aBudget) : "Add deposits"}
           </div>
         </div>
 
@@ -176,6 +176,57 @@ export default function Dashboard() {
           </button>
         </div>
       </div>
+
+      {state.members.length > 0 && (
+        <>
+          <div className="section-pad">
+            <div className="section-head">
+              <div className="section-title">Member Spending</div>
+            </div>
+          </div>
+          <div className="card list-card">
+            {state.members.map((m, i) => {
+              const spent = balances.spent[m.id] ?? 0;
+              const bal = balances.balance[m.id] ?? 0;
+              const dep = m.contribution || 0;
+              const frac = dep > 0 ? Math.min(spent / dep, 1) : spent > 0 ? 1 : 0;
+              const over = bal < -0.005;
+              return (
+                <div
+                  className="spend-row rise"
+                  key={m.id}
+                  style={{ animationDelay: `${i * 0.07}s` }}
+                >
+                  <span className="m-avatar sm" style={{ background: m.color }}>
+                    {initials(m.name)}
+                  </span>
+                  <div className="spend-info">
+                    <div className="spend-top">
+                      <span className="spend-name">{m.name}</span>
+                      <span className="spend-amt num">{money(spent)}</span>
+                    </div>
+                    <div className="spend-bar">
+                      <i
+                        className={over ? "over" : ""}
+                        style={{ width: `${Math.round(frac * 100)}%` }}
+                      />
+                    </div>
+                    <div className="spend-sub">
+                      {over ? (
+                        <span className="over-txt">
+                          over by {money(Math.abs(bal))}
+                        </span>
+                      ) : (
+                        <>{money(bal)} left of {money(dep)}</>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
 
       <div className="section-pad">
         <div className="section-head">

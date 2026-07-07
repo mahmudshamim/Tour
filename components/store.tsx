@@ -113,9 +113,13 @@ type Store = {
   state: State;
   balances: Balances;
   totalSpent: number;
+  pool: number;
   memberById: (id: string) => Member | undefined;
-  addMember: (name: string) => void;
-  updateMember: (id: string, name: string, color?: string) => void;
+  addMember: (name: string, contribution?: number) => void;
+  updateMember: (
+    id: string,
+    patch: { name?: string; contribution?: number; color?: string }
+  ) => void;
   removeMember: (id: string) => void;
   addTxn: (data: Omit<Txn, "id" | "createdAt" | "updatedAt">) => void;
   updateTxn: (
@@ -198,7 +202,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   /* ---- actions: optimistic local + Supabase write ---- */
 
-  const addMember = useCallback((name: string) => {
+  const addMember = useCallback((name: string, contribution = 0) => {
     const trimmed = name.trim();
     if (!trimmed) return;
     const s = stateRef.current;
@@ -206,6 +210,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       id: uid(),
       name: trimmed,
       color: MEMBER_COLORS[s.members.length % MEMBER_COLORS.length],
+      contribution: Number.isFinite(contribution) ? contribution : 0,
       createdAt: Date.now(),
     };
     dispatch({ type: "upsertMember", member });
@@ -218,13 +223,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const updateMember = useCallback(
-    (id: string, name: string, color?: string) => {
+    (
+      id: string,
+      patch: { name?: string; contribution?: number; color?: string }
+    ) => {
       const old = stateRef.current.members.find((m) => m.id === id);
       if (!old) return;
       const member: Member = {
         ...old,
-        name: name.trim() || old.name,
-        color: color ?? old.color,
+        name: patch.name !== undefined ? patch.name.trim() || old.name : old.name,
+        contribution:
+          patch.contribution !== undefined && Number.isFinite(patch.contribution)
+            ? patch.contribution
+            : old.contribution,
+        color: patch.color ?? old.color,
       };
       dispatch({ type: "upsertMember", member });
       db.updateMember(member);
@@ -314,37 +326,55 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const seedSample = useCallback(() => {
     const now = Date.now();
-    const mk = (name: string, i: number): Member => ({
+    const mk = (name: string, contribution: number, i: number): Member => ({
       id: uid(),
       name,
       color: MEMBER_COLORS[i % MEMBER_COLORS.length],
+      contribution,
       createdAt: now + i,
     });
-    const you = mk("You", 0);
-    const sarah = mk("Sarah", 1);
-    const marcus = mk("Marcus", 2);
+    const you = mk("You", 1500, 0);
+    const sarah = mk("Sarah", 1500, 1);
+    const marcus = mk("Marcus", 1500, 2);
     const members = [you, sarah, marcus];
     const all = members.map((m) => m.id);
-    const mkTxn = (
+    const mkGroup = (
       title: string,
       amount: number,
       category: CategoryId,
-      paidBy: string,
       n: number
     ): Txn => ({
       id: uid(),
       title,
       amount,
       category,
-      paidBy,
+      kind: "group",
+      member: "",
       split: all,
       createdAt: now - n * 3600_000,
       updatedAt: now - n * 3600_000,
     });
+    const mkPersonal = (
+      title: string,
+      amount: number,
+      category: CategoryId,
+      member: string,
+      n: number
+    ): Txn => ({
+      id: uid(),
+      title,
+      amount,
+      category,
+      kind: "personal",
+      member,
+      split: [],
+      createdAt: now - n * 3600_000,
+      updatedAt: now - n * 3600_000,
+    });
     const txns = [
-      mkTxn("Alpine Outfitters", 85, "gear", you.id, 1),
-      mkTxn("Summit Cafe", 32.5, "food", sarah.id, 3),
-      mkTxn("Trail Permit", 15, "fees", marcus.id, 6),
+      mkGroup("Hotel Booking", 900, "stay", 1),
+      mkGroup("Group Dinner", 240, "food", 3),
+      mkPersonal("Souvenir Shopping", 120, "gear", sarah.id, 5),
     ];
     const audit: AuditEntry[] = txns.map((t) => ({
       id: uid(),
@@ -381,6 +411,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     state,
     balances,
     totalSpent,
+    pool: balances.pool,
     memberById,
     addMember,
     updateMember,

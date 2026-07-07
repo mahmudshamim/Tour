@@ -11,12 +11,13 @@ import {
   Eraser,
 } from "lucide-react";
 import { initials } from "../constants";
-import { useStore } from "../store";
+import { useStore, useMoney } from "../store";
 import { useUI } from "../ui";
 
 export default function SettingsSheet() {
   const {
     state,
+    pool,
     configured,
     syncing,
     addMember,
@@ -26,21 +27,24 @@ export default function SettingsSheet() {
     seedSample,
     clearAll,
   } = useStore();
+  const money = useMoney();
   const { close, openLog } = useUI();
   const s = state.settings;
 
   const [newName, setNewName] = useState("");
+  const [newAmt, setNewAmt] = useState("");
   const [editId, setEditId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
 
   const add = () => {
     if (!newName.trim()) return;
-    addMember(newName);
+    addMember(newName, parseFloat(newAmt) || 0);
     setNewName("");
+    setNewAmt("");
   };
 
   const saveEdit = () => {
-    if (editId) updateMember(editId, editName);
+    if (editId) updateMember(editId, { name: editName });
     setEditId(null);
   };
 
@@ -55,7 +59,7 @@ export default function SettingsSheet() {
         <div className="field">
           <div className="input">
             <input
-              placeholder="Trip name (e.g. Patagonia 2026)"
+              placeholder="Trip name (e.g. Sylhet 2026)"
               value={s.tripName}
               onChange={(e) => updateSettings({ tripName: e.target.value })}
             />
@@ -63,17 +67,12 @@ export default function SettingsSheet() {
         </div>
         <div className="field-row">
           <div>
-            <label className="mini-label">Total budget</label>
-            <div className="input compact">
+            <label className="mini-label">Pool (from deposits)</label>
+            <div className="input compact pool-box">
               <span className="cur">{s.currency}</span>
-              <input
-                placeholder="0"
-                inputMode="decimal"
-                value={s.budget || ""}
-                onChange={(e) =>
-                  updateSettings({ budget: parseFloat(e.target.value) || 0 })
-                }
-              />
+              <span className="num pool-val">
+                {pool.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+              </span>
             </div>
           </div>
           <div>
@@ -90,8 +89,10 @@ export default function SettingsSheet() {
           </div>
         </div>
 
-        {/* People */}
-        <div className="split-title">People ({state.members.length})</div>
+        {/* People + deposits */}
+        <div className="split-title">
+          People &amp; Deposits ({state.members.length})
+        </div>
         {state.members.map((m) => {
           const isSelf = s.selfId === m.id;
           return (
@@ -120,6 +121,19 @@ export default function SettingsSheet() {
                   {isSelf && <span className="you-badge">You</span>}
                 </button>
               )}
+              <div className="depo-input">
+                <span className="cur sm">{s.currency}</span>
+                <input
+                  inputMode="decimal"
+                  value={m.contribution || ""}
+                  placeholder="0"
+                  onChange={(e) =>
+                    updateMember(m.id, {
+                      contribution: parseFloat(e.target.value) || 0,
+                    })
+                  }
+                />
+              </div>
               <button
                 className={`mini-btn ${isSelf ? "on" : ""}`}
                 title="Mark as you"
@@ -130,9 +144,7 @@ export default function SettingsSheet() {
               <button
                 className="mini-btn danger"
                 title="Remove"
-                onClick={() =>
-                  confirm(`Remove ${m.name}?`) && removeMember(m.id)
-                }
+                onClick={() => confirm(`Remove ${m.name}?`) && removeMember(m.id)}
               >
                 <Trash2 size={15} />
               </button>
@@ -144,9 +156,19 @@ export default function SettingsSheet() {
           <div className="input compact flex1">
             <UserPlus size={17} />
             <input
-              placeholder="Add a person"
+              placeholder="Name"
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && add()}
+            />
+          </div>
+          <div className="input compact depo-add">
+            <span className="cur sm">{s.currency}</span>
+            <input
+              placeholder="Deposit"
+              inputMode="decimal"
+              value={newAmt}
+              onChange={(e) => setNewAmt(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && add()}
             />
           </div>

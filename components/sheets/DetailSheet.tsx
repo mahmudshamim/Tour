@@ -17,8 +17,10 @@ export default function DetailSheet({ txn: initial }: { txn: Txn }) {
     .sort((a, b) => b.at - a.at);
 
   const Icon = catIcon(txn.category);
-  const payer = memberById(txn.paidBy);
-  const perHead = txn.split.length ? txn.amount / txn.split.length : 0;
+  const isGroup = txn.kind === "group";
+  const chargedTo = memberById(txn.member);
+  const perHead =
+    isGroup && txn.split.length ? txn.amount / txn.split.length : 0;
 
   const onDelete = () => {
     if (confirm(`Delete "${txn.title}"? This is kept in the activity log.`)) {
@@ -45,23 +47,36 @@ export default function DetailSheet({ txn: initial }: { txn: Txn }) {
 
         <div className="detail-grid">
           <div className="dg-cell">
-            <div className="q-lbl">Paid by</div>
+            <div className="q-lbl">Type</div>
             <div className="dg-val">
-              <span
-                className="dot-avatar"
-                style={{ background: payer?.color ?? "#555" }}
-              />
-              {payer?.name ?? "—"}
+              <span className={`tag-pill ${isGroup ? "grp" : "per"}`}>
+                {isGroup ? "GROUP" : "PERSONAL"}
+              </span>
             </div>
           </div>
-          <div className="dg-cell">
-            <div className="q-lbl">Per person</div>
-            <div className="dg-val num">{money(perHead)}</div>
-          </div>
-          <div className="dg-cell">
-            <div className="q-lbl">Split between</div>
-            <div className="dg-val">{txn.split.length} people</div>
-          </div>
+          {isGroup ? (
+            <>
+              <div className="dg-cell">
+                <div className="q-lbl">Per person</div>
+                <div className="dg-val num">{money(perHead)}</div>
+              </div>
+              <div className="dg-cell">
+                <div className="q-lbl">Deducted from</div>
+                <div className="dg-val">{txn.split.length} people</div>
+              </div>
+            </>
+          ) : (
+            <div className="dg-cell">
+              <div className="q-lbl">Charged to</div>
+              <div className="dg-val">
+                <span
+                  className="dot-avatar"
+                  style={{ background: chargedTo?.color ?? "#555" }}
+                />
+                {chargedTo?.name ?? "—"}
+              </div>
+            </div>
+          )}
           <div className="dg-cell">
             <div className="q-lbl">Created</div>
             <div className="dg-val">{fmtDateTime(txn.createdAt)}</div>

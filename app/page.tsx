@@ -2,13 +2,13 @@
 
 import { useState } from "react";
 import { Plus } from "lucide-react";
-import TripMark from "@/components/TripMark";
 import type { Tab } from "@/components/types";
 import { ThemeProvider, useTheme } from "@/components/theme";
 import { StoreProvider, useStore } from "@/components/store";
 import { UIProvider, useUI } from "@/components/ui";
+import TripMark from "@/components/TripMark";
+import IntroScreen from "@/components/IntroScreen";
 import BottomNav from "@/components/BottomNav";
-import Onboarding from "@/components/screens/Onboarding";
 import MapScreen from "@/components/screens/MapScreen";
 import Dashboard from "@/components/screens/Dashboard";
 import Itinerary from "@/components/screens/Itinerary";
@@ -17,7 +17,7 @@ import SheetHost from "@/components/sheets/SheetHost";
 
 function Shell() {
   const { theme } = useTheme();
-  const { ready, state } = useStore();
+  const { ready } = useStore();
   const { openAdd } = useUI();
   const [tab, setTab] = useState<Tab>(() => {
     if (typeof window !== "undefined") {
@@ -27,30 +27,24 @@ function Shell() {
     }
     return "dashboard";
   });
-  const [onboardDismissed, setOnboardDismissed] = useState(false);
-
-  const showOnboard =
-    ready && state.members.length === 0 && state.txns.length === 0 && !onboardDismissed;
+  const [introDone, setIntroDone] = useState(
+    () =>
+      typeof window !== "undefined" &&
+      window.location.search.includes("nointro")
+  );
 
   return (
     <main className="stage">
       <div className="phone" data-theme={theme === "dark" ? "dark" : undefined}>
         <div className="notch" />
 
-        {!ready ? (
-          <div className="splash">
-            <span className="splash-logo">
-              <TripMark size={34} />
-            </span>
-          </div>
-        ) : (
+        {ready ? (
           <>
             {tab === "dashboard" && <Dashboard />}
             {tab === "map" && <MapScreen />}
             {tab === "itinerary" && <Itinerary />}
             {tab === "group" && <Expenses />}
 
-            {/* Global add-expense FAB — visible on every tab */}
             <button
               className="fab fab-global"
               onClick={openAdd}
@@ -60,13 +54,17 @@ function Shell() {
             </button>
 
             <BottomNav active={tab} onChange={setTab} />
-
-            {showOnboard && (
-              <Onboarding onClose={() => setOnboardDismissed(true)} />
-            )}
             <SheetHost />
           </>
+        ) : (
+          <div className="splash">
+            <span className="splash-logo">
+              <TripMark size={30} />
+            </span>
+          </div>
         )}
+
+        {!introDone && <IntroScreen onDone={() => setIntroDone(true)} />}
       </div>
     </main>
   );

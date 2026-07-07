@@ -1,10 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { Check, Users, Settings2 } from "lucide-react";
+import { Check, Users, Settings2, User } from "lucide-react";
 import { CATEGORIES, type CategoryId } from "../constants";
 import { useStore, type Txn } from "../store";
 import { useUI } from "../ui";
+import type { TxnKind } from "../models";
 
 export default function ExpenseSheet({ editing }: { editing?: Txn }) {
   const { state, addTxn, updateTxn } = useStore();
@@ -12,16 +13,17 @@ export default function ExpenseSheet({ editing }: { editing?: Txn }) {
   const members = state.members;
   const symbol = state.settings.currency || "৳";
 
-  const [amount, setAmount] = useState(
-    editing ? String(editing.amount) : ""
-  );
+  const [amount, setAmount] = useState(editing ? String(editing.amount) : "");
   const [title, setTitle] = useState(editing?.title ?? "");
-  const [cat, setCat] = useState<CategoryId>(editing?.category ?? "gear");
-  const [paidBy, setPaidBy] = useState(
-    editing?.paidBy ?? state.settings.selfId ?? members[0]?.id ?? ""
-  );
+  const [cat, setCat] = useState<CategoryId>(editing?.category ?? "food");
+  const [kind, setKind] = useState<TxnKind>(editing?.kind ?? "group");
   const [split, setSplit] = useState<string[]>(
-    editing?.split ?? members.map((m) => m.id)
+    editing?.kind === "group" && editing.split.length
+      ? editing.split
+      : members.map((m) => m.id)
+  );
+  const [member, setMember] = useState<string>(
+    editing?.member || state.settings.selfId || members[0]?.id || ""
   );
 
   const toggleSplit = (id: string) =>
@@ -29,7 +31,10 @@ export default function ExpenseSheet({ editing }: { editing?: Txn }) {
 
   const amt = parseFloat(amount);
   const valid =
-    !isNaN(amt) && amt > 0 && title.trim() && paidBy && split.length > 0;
+    !isNaN(amt) &&
+    amt > 0 &&
+    title.trim() &&
+    (kind === "group" ? split.length > 0 : Boolean(member));
 
   const submit = () => {
     if (!valid) return;
@@ -37,8 +42,9 @@ export default function ExpenseSheet({ editing }: { editing?: Txn }) {
       title: title.trim(),
       amount: Math.round(amt * 100) / 100,
       category: cat,
-      paidBy,
-      split,
+      kind,
+      split: kind === "group" ? split : [],
+      member: kind === "personal" ? member : "",
     };
     if (editing) updateTxn(editing.id, data);
     else addTxn(data);
@@ -53,7 +59,7 @@ export default function ExpenseSheet({ editing }: { editing?: Txn }) {
           <h2>Add Expense</h2>
           <div className="empty">
             <Users size={28} />
-            <p>Add people first, then you can split expenses.</p>
+            <p>Add people (with their deposit) first, then log expenses.</p>
             <button className="btn-primary" onClick={openSettings}>
               <Settings2 size={17} /> Add people
             </button>
@@ -64,7 +70,9 @@ export default function ExpenseSheet({ editing }: { editing?: Txn }) {
   }
 
   const perHead =
-    valid && split.length ? (amt / split.length).toFixed(2) : "0.00";
+    kind === "group" && valid && split.length
+      ? (amt / split.length).toFixed(2)
+      : "0.00";
 
   return (
     <div className="sheet-overlay" onClick={close}>
@@ -108,41 +116,64 @@ export default function ExpenseSheet({ editing }: { editing?: Txn }) {
           ))}
         </div>
 
-        <div className="split-title">Paid by</div>
-        <div className="chip-row">
-          {members.map((m) => (
-            <button
-              key={m.id}
-              className={`pay-chip ${paidBy === m.id ? "on" : ""}`}
-              onClick={() => setPaidBy(m.id)}
-            >
-              <span
-                className="dot-avatar"
-                style={{ background: m.color }}
-              />
-              {m.name}
-            </button>
-          ))}
+        {/* Group vs Personal */}
+        <div className="seg">
+          <button
+            className={`seg-btn ${kind === "group" ? "on" : ""}`}
+            onClick={() => setKind("group")}
+          >
+            <Users size={16} /> Group
+          </button>
+          <button
+            className={`seg-btn ${kind === "personal" ? "on" : ""}`}
+            onClick={() => setKind("personal")}
+          >
+            <User size={16} /> Personal
+          </button>
         </div>
 
-        <div className="split-title">
-          Split between <span className="muted-inline">{symbol}{perHead} each</span>
-        </div>
-        {members.map((m) => (
-          <div className="split-row" key={m.id}>
-            <span className="m-avatar" style={{ background: m.color }}>
-              {m.name.slice(0, 1).toUpperCase()}
-            </span>
-            <span className="nm">{m.name}</span>
-            <button
-              className={`check ${split.includes(m.id) ? "on" : ""}`}
-              onClick={() => toggleSplit(m.id)}
-              aria-label={`Split with ${m.name}`}
-            >
-              {split.includes(m.id) && <Check size={15} strokeWidth={3} />}
-            </button>
-          </div>
-        ))}
+        {kind === "group" ? (
+          <>
+            <div className="split-title">
+              Deduct from{" "}
+              <span className="muted-inline">
+                {symbol}
+                {perHead} each
+              </span>
+            </div>
+            {members.map((m) => (
+              <div className="split-row" key={m.id}>
+                <span className="m-avatar" style={{ background: m.color }}>
+                  {m.name.slice(0, 1).toUpperCase()}
+                </span>
+                <span className="nm">{m.name}</span>
+                <button
+                  className={`check ${split.includes(m.id) ? "on" : ""}`}
+                  onClick={() => toggleSplit(m.id)}
+                  aria-label={`Split with ${m.name}`}
+                >
+                  {split.includes(m.id) && <Check size={15} strokeWidth={3} />}
+                </button>
+              </div>
+            ))}
+          </>
+        ) : (
+          <>
+            <div className="split-title">Charge to one person</div>
+            <div className="chip-row">
+              {members.map((m) => (
+                <button
+                  key={m.id}
+                  className={`pay-chip ${member === m.id ? "on" : ""}`}
+                  onClick={() => setMember(m.id)}
+                >
+                  <span className="dot-avatar" style={{ background: m.color }} />
+                  {m.name}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
 
         <button
           className="btn-primary"

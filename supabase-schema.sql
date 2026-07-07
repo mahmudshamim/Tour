@@ -4,10 +4,11 @@
 -- ============================================================
 
 create table if not exists public.members (
-  id         text primary key,
-  name       text not null,
-  color      text,
-  created_at bigint
+  id           text primary key,
+  name         text not null,
+  color        text,
+  contribution numeric not null default 0,
+  created_at   bigint
 );
 
 create table if not exists public.transactions (
@@ -15,6 +16,8 @@ create table if not exists public.transactions (
   title      text not null,
   amount     numeric not null default 0,
   category   text,
+  kind       text not null default 'group',
+  member     text,
   paid_by    text,
   split      jsonb not null default '[]'::jsonb,
   created_at bigint,

@@ -17,12 +17,14 @@ const memberToRow = (m: Member) => ({
   id: m.id,
   name: m.name,
   color: m.color,
+  contribution: m.contribution ?? 0,
   created_at: m.createdAt,
 });
 const rowToMember = (r: any): Member => ({
   id: r.id,
   name: r.name,
   color: r.color,
+  contribution: Number(r.contribution ?? 0),
   createdAt: Number(r.created_at),
 });
 
@@ -31,7 +33,8 @@ const txnToRow = (t: Txn) => ({
   title: t.title,
   amount: t.amount,
   category: t.category,
-  paid_by: t.paidBy,
+  kind: t.kind,
+  member: t.member || null,
   split: t.split,
   created_at: t.createdAt,
   updated_at: t.updatedAt,
@@ -41,7 +44,8 @@ const rowToTxn = (r: any): Txn => ({
   title: r.title,
   amount: Number(r.amount),
   category: r.category as CategoryId,
-  paidBy: r.paid_by,
+  kind: (r.kind as Txn["kind"]) ?? "group",
+  member: r.member ?? "",
   split: Array.isArray(r.split) ? r.split : [],
   createdAt: Number(r.created_at),
   updatedAt: Number(r.updated_at),

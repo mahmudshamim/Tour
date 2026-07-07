@@ -1,6 +1,6 @@
 "use client";
 
-import { Users, Receipt, UserPlus } from "lucide-react";
+import { Users, Receipt, UserPlus, Wallet } from "lucide-react";
 import AppHeader from "../AppHeader";
 import TxnRow from "../TxnRow";
 import { initials } from "../constants";
@@ -9,16 +9,15 @@ import { useUI } from "../ui";
 import { useCountUp, useMounted } from "../hooks";
 
 export default function Expenses() {
-  const { state, totalSpent, balances } = useStore();
+  const { state, totalSpent, pool, balances } = useStore();
   const money = useMoney();
   const { openSettings, openTransactions } = useUI();
 
-  const budget = state.settings.budget;
-  const pct = budget > 0 ? Math.min(Math.round((totalSpent / budget) * 100), 100) : 0;
+  const pct = pool > 0 ? Math.min(Math.round((totalSpent / pool) * 100), 100) : 0;
   const self = state.settings.selfId;
 
   const mounted = useMounted();
-  const aTotal = useCountUp(totalSpent);
+  const aSpent = useCountUp(totalSpent);
 
   const recent = [...state.txns]
     .sort((a, b) => b.createdAt - a.createdAt)
@@ -29,12 +28,12 @@ export default function Expenses() {
       <AppHeader title="Tour Expenses" />
 
       <div className="card summary-card">
-        <div className="eyebrow">Total Spent</div>
+        <div className="eyebrow">Spent from Pool</div>
         <div className="summary-amt num">
-          {money(aTotal)}
-          {budget > 0 && <span className="of">of {money(budget)}</span>}
+          {money(aSpent)}
+          {pool > 0 && <span className="of">of {money(pool)}</span>}
         </div>
-        {budget > 0 ? (
+        {pool > 0 ? (
           <>
             <div className="progress">
               <i style={{ width: `${mounted ? pct : 0}%` }} />
@@ -42,13 +41,13 @@ export default function Expenses() {
             <div className="progress-legend">
               <span className="used">{pct}% USED</span>
               <span className="rem num">
-                {money(budget - totalSpent)} REMAINING
+                {money(pool - totalSpent)} LEFT IN POOL
               </span>
             </div>
           </>
         ) : (
           <div className="hint-line" onClick={openSettings}>
-            Set a budget in settings to track remaining
+            Add people with their deposits to build the pool
           </div>
         )}
       </div>
@@ -56,7 +55,7 @@ export default function Expenses() {
       <div className="section-pad">
         <div className="section-head">
           <div className="section-title row-title">
-            <Users size={19} /> Group Balances
+            <Wallet size={19} /> Member Balances
           </div>
           <button className="link" onClick={openSettings}>
             <UserPlus size={14} /> Manage
@@ -68,7 +67,7 @@ export default function Expenses() {
         <div className="card list-card">
           <div className="empty">
             <Users size={28} />
-            <p>No people yet. Add tripmates to split expenses.</p>
+            <p>No people yet. Add tripmates and their deposits.</p>
             <button className="btn-primary" onClick={openSettings}>
               <UserPlus size={17} /> Add people
             </button>
@@ -77,21 +76,10 @@ export default function Expenses() {
       ) : (
         <div className="card list-card">
           {state.members.map((m, i) => {
-            const net = balances.net[m.id] ?? 0;
-            const paid = balances.paid[m.id] ?? 0;
-            const owed = net > 0.005;
-            const owes = net < -0.005;
-            const cls = owed ? "pos" : owes ? "neg" : "zero";
-            const label = owed
-              ? `+${money(net)}`
-              : owes
-              ? `-${money(net)}`
-              : money(0);
-            const status = owed
-              ? `Is owed ${money(net)}`
-              : owes
-              ? `Owes ${money(net)}`
-              : "Settle up";
+            const bal = balances.balance[m.id] ?? 0;
+            const spent = balances.spent[m.id] ?? 0;
+            const over = bal < -0.005;
+            const cls = over ? "neg" : "pos";
             return (
               <div
                 className="member rise"
@@ -107,10 +95,14 @@ export default function Expenses() {
                     {m.id === self && <span className="you-badge">You</span>}
                   </div>
                   <div className="m-status">
-                    {status} · <b>Paid: {money(paid)}</b>
+                    Deposited {money(m.contribution)} ·{" "}
+                    <b>Spent {money(spent)}</b>
                   </div>
                 </div>
-                <div className={`m-amount num ${cls}`}>{label}</div>
+                <div className="m-bal">
+                  <div className={`m-amount num ${cls}`}>{money(bal)}</div>
+                  <div className="m-bal-lbl">{over ? "over" : "left"}</div>
+                </div>
               </div>
             );
           })}
