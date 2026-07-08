@@ -9,10 +9,12 @@ import {
   History,
   Database,
   Eraser,
+  Lock,
 } from "lucide-react";
 import { initials } from "../constants";
 import { useStore } from "../store";
 import { useUI } from "../ui";
+import PasswordModal from "../PasswordModal";
 
 export default function SettingsSheet() {
   const {
@@ -26,13 +28,28 @@ export default function SettingsSheet() {
     seedSample,
     clearAll,
   } = useStore();
-  const { close, openLog } = useUI();
+  const { close, openLog, confirm } = useUI();
   const s = state.settings;
 
   const [newName, setNewName] = useState("");
   const [newAmt, setNewAmt] = useState("");
   const [editId, setEditId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
+  const [unlocked, setUnlocked] = useState(false);
+  const [askPw, setAskPw] = useState(false);
+
+  const doClear = async () => {
+    const ok = await confirm({
+      title: "Clear all data?",
+      message: "Erases every trip, person and history entry. This can't be undone.",
+      confirmLabel: "Erase everything",
+      danger: true,
+    });
+    if (ok) {
+      clearAll();
+      close();
+    }
+  };
 
   const add = () => {
     if (!newName.trim()) return;
@@ -46,33 +63,60 @@ export default function SettingsSheet() {
     setEditId(null);
   };
 
+  const tryRemove = async (id: string, name: string) => {
+    const refs = state.txns.filter(
+      (t) => t.member === id || t.split.includes(id)
+    ).length;
+    if (refs > 0) {
+      await confirm({
+        title: `${name} is in use`,
+        message: `Used in ${refs} expense${
+          refs > 1 ? "s" : ""
+        }. Delete or reassign those first — keeps the pool math correct.`,
+        confirmLabel: "Got it",
+        cancelLabel: "Close",
+      });
+      return;
+    }
+    const ok = await confirm({
+      title: `Remove ${name}?`,
+      message: "They'll be taken off this trip's people list.",
+      confirmLabel: "Remove",
+      danger: true,
+    });
+    if (ok) removeMember(id);
+  };
+
   return (
     <div className="sheet-overlay" onClick={close}>
       <div className="sheet tall" onClick={(e) => e.stopPropagation()}>
         <div className="sheet-grip" />
         <h2>Settings</h2>
 
-        {/* Trip */}
-        <div className="split-title">Trip</div>
-        <div className="field">
-          <div className="input">
-            <input
-              placeholder="Trip name (e.g. Sylhet 2026)"
-              value={s.tripName}
-              onChange={(e) => updateSettings({ tripName: e.target.value })}
-            />
+        {/* Trip + currency */}
+        <div className="tc-row">
+          <div className="tc-trip">
+            <div className="split-title">Trip</div>
+            <div className="input">
+              <input
+                placeholder="Trip name (e.g. Sylhet 2026)"
+                value={s.tripName}
+                onChange={(e) => updateSettings({ tripName: e.target.value })}
+              />
+            </div>
           </div>
-        </div>
-        <div className="field">
-          <label className="mini-label">Currency</label>
-          <div className="input compact cur-field">
-            <input
-              value={s.currency}
-              maxLength={3}
-              onChange={(e) =>
-                updateSettings({ currency: e.target.value || "৳" })
-              }
-            />
+          <div className="tc-cur">
+            <div className="split-title">Currency</div>
+            <div className="input">
+              <input
+                className="cur-input"
+                value={s.currency}
+                maxLength={3}
+                onChange={(e) =>
+                  updateSettings({ currency: e.target.value || "৳" })
+                }
+              />
+            </div>
           </div>
         </div>
 
@@ -131,7 +175,7 @@ export default function SettingsSheet() {
               <button
                 className="mini-btn danger"
                 title="Remove"
-                onClick={() => confirm(`Remove ${m.name}?`) && removeMember(m.id)}
+                onClick={() => tryRemove(m.id, m.name)}
               >
                 <Trash2 size={15} />
               </button>
@@ -176,29 +220,43 @@ export default function SettingsSheet() {
               : "Synced to Supabase (cloud)"
             : "Local only — no database connected"}
         </div>
-        <button className="row-btn" onClick={openLog}>
-          <History size={17} /> Activity log
-          <span className="row-count">{state.audit.length}</span>
-        </button>
-        {state.members.length === 0 && (
-          <button className="row-btn" onClick={seedSample}>
-            <Database size={17} /> Load sample data
+
+        {unlocked ? (
+          <>
+            <button className="row-btn" onClick={openLog}>
+              <History size={17} /> Activity log
+              <span className="row-count">{state.audit.length}</span>
+            </button>
+            {state.members.length === 0 && (
+              <button className="row-btn" onClick={seedSample}>
+                <Database size={17} /> Load sample data
+              </button>
+            )}
+            <button className="row-btn danger" onClick={doClear}>
+              <Eraser size={17} /> Clear all data
+            </button>
+          </>
+        ) : (
+          <button className="row-btn" onClick={() => setAskPw(true)}>
+            <Lock size={17} /> Unlock data options
+            <span className="row-lock-hint">password</span>
           </button>
         )}
-        <button
-          className="row-btn danger"
-          onClick={() =>
-            confirm("Erase all trips, people and history? Cannot be undone.") &&
-            clearAll()
-          }
-        >
-          <Eraser size={17} /> Clear all data
-        </button>
 
         <button className="btn-primary" onClick={close}>
           Done
         </button>
       </div>
+
+      {askPw && (
+        <PasswordModal
+          onClose={() => setAskPw(false)}
+          onSuccess={() => {
+            setUnlocked(true);
+            setAskPw(false);
+          }}
+        />
+      )}
     </div>
   );
 }

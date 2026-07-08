@@ -7,6 +7,7 @@ import {
   type Txn,
   type AuditEntry,
   type Settings,
+  type Place,
 } from "./models";
 
 export const dbConfigured = isConfigured;
@@ -59,6 +60,10 @@ const auditToRow = (a: AuditEntry) => ({
   action: a.action,
   at: a.at,
   changes: a.changes ?? null,
+  actor: a.by ?? null,
+  device: a.device ?? null,
+  device_id: a.deviceId ?? null,
+  tz: a.tz ?? null,
 });
 const rowToAudit = (r: any): AuditEntry => ({
   id: r.id,
@@ -68,6 +73,10 @@ const rowToAudit = (r: any): AuditEntry => ({
   action: r.action,
   at: Number(r.at),
   changes: r.changes ?? undefined,
+  by: r.actor ?? undefined,
+  device: r.device ?? undefined,
+  deviceId: r.device_id ?? undefined,
+  tz: r.tz ?? undefined,
 });
 
 const settingsToRow = (s: Settings) => ({
@@ -215,6 +224,76 @@ export const db = {
     const ch = sb
       .channel("terra-sync")
       .on("postgres_changes", { event: "*", schema: "public" }, cb)
+      .subscribe();
+    return () => {
+      sb.removeChannel(ch);
+    };
+  },
+};
+
+/* ============================================================
+   Places (Trip Plan) — cloud table, shared across devices
+   ============================================================ */
+
+const placeToRow = (p: Place) => ({
+  id: p.id,
+  name: p.name,
+  area: p.area,
+  icon: p.icon,
+  done: p.done,
+  ord: p.ord,
+});
+const rowToPlace = (r: any): Place => ({
+  id: r.id,
+  name: r.name,
+  area: r.area ?? "",
+  icon: r.icon ?? "pin",
+  done: !!r.done,
+  ord: Number(r.ord ?? 0),
+});
+
+export async function loadPlaces(): Promise<
+  { ok: true; places: Place[] } | { ok: false; error: string }
+> {
+  const sb = createClient();
+  if (!sb) return { ok: false, error: "not-configured" };
+  const { data, error } = await sb
+    .from("places")
+    .select("*")
+    .order("ord", { ascending: true });
+  if (error) return { ok: false, error: error.message };
+  return { ok: true, places: (data ?? []).map(rowToPlace) };
+}
+
+export const placesDb = {
+  insert: (p: Place) => {
+    const sb = createClient();
+    if (sb) run("insertPlace", sb.from("places").insert(placeToRow(p)));
+  },
+  update: (p: Place) => {
+    const sb = createClient();
+    if (sb)
+      run("updatePlace", sb.from("places").update(placeToRow(p)).eq("id", p.id));
+  },
+  del: (id: string) => {
+    const sb = createClient();
+    if (sb) run("deletePlace", sb.from("places").delete().eq("id", id));
+  },
+  async seed(list: Place[]) {
+    const sb = createClient();
+    if (!sb || !list.length) return;
+    await sb.from("places").insert(list.map(placeToRow));
+  },
+  onChange(cb: () => void): () => void {
+    const sb = createClient();
+    if (!sb) return () => {};
+    const ch = sb
+      .channel("terra-places")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "places" },
+        cb
+      )
       .subscribe();
     return () => {
       sb.removeChannel(ch);

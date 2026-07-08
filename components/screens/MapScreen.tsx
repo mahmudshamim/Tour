@@ -5,6 +5,8 @@ import { Share2, Camera, Coffee, Car, Trees, Check, MapPin } from "lucide-react"
 import AppHeader from "../AppHeader";
 import SylhetMap from "../SylhetMap";
 import { usePlaces, ICONS } from "../places";
+import { useStore } from "../store";
+import { shareTripCard } from "../tripCard";
 
 const attractions = [
   { Icon: Trees, label: "আগুন পাহাড়", top: "16%", left: "20%" },
@@ -16,8 +18,16 @@ export default function MapScreen() {
   const stageRef = useRef<HTMLDivElement>(null);
   const d3Ref = useRef<HTMLDivElement>(null);
   const { places } = usePlaces();
+  const { state } = useStore();
   const done = places.filter((p) => p.done).length;
   const upcoming = places.filter((p) => !p.done).slice(0, 3);
+
+  const shareTrip = () => {
+    shareTripCard({
+      title: state.settings.tripName || "সিলেট ট্রিপ",
+      places,
+    });
+  };
 
   // pointer + idle-drift parallax → CSS vars --px/--py on the 3D plane
   useEffect(() => {
@@ -129,7 +139,11 @@ export default function MapScreen() {
             {done} of {places.length} explored
           </div>
         </div>
-        <button className="icon-btn" aria-label="Share route">
+        <button
+          className="icon-btn"
+          aria-label="Share route"
+          onClick={shareTrip}
+        >
           <Share2 size={18} />
         </button>
       </div>

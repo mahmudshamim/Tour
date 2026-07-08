@@ -8,7 +8,7 @@ import { useUI } from "../ui";
 export default function DetailSheet({ txn: initial }: { txn: Txn }) {
   const { state, deleteTxn, memberById } = useStore();
   const money = useMoney();
-  const { close, openEdit } = useUI();
+  const { close, openEdit, confirm } = useUI();
 
   // Always reflect latest version from store (may have been edited).
   const txn = state.txns.find((t) => t.id === initial.id) ?? initial;
@@ -22,8 +22,14 @@ export default function DetailSheet({ txn: initial }: { txn: Txn }) {
   const perHead =
     isGroup && txn.split.length ? txn.amount / txn.split.length : 0;
 
-  const onDelete = () => {
-    if (confirm(`Delete "${txn.title}"? This is kept in the activity log.`)) {
+  const onDelete = async () => {
+    const ok = await confirm({
+      title: `Delete “${txn.title}”?`,
+      message: "It stays in the activity log, but leaves your expense list.",
+      confirmLabel: "Delete",
+      danger: true,
+    });
+    if (ok) {
       deleteTxn(txn.id);
       close();
     }
@@ -99,6 +105,14 @@ export default function DetailSheet({ txn: initial }: { txn: Txn }) {
                   </b>
                   <span className="hist-time">{fmtDateTime(h.at)}</span>
                 </div>
+                {(h.by || h.device || h.tz) && (
+                  <div className="hist-origin">
+                    {h.by && <b>{h.by}</b>}
+                    {[h.device, h.tz].filter(Boolean).map((x, i) => (
+                      <span key={x}>{i > 0 || h.by ? " · " : ""}{x}</span>
+                    ))}
+                  </div>
+                )}
                 {h.changes && h.changes.length > 0 && (
                   <div className="hist-changes">
                     {h.changes.map((c, i) => (

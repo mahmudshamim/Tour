@@ -30,8 +30,12 @@ create table if not exists public.audit (
   title    text,
   amount   numeric,
   action   text,
-  at       bigint,
-  changes  jsonb
+  at        bigint,
+  changes   jsonb,
+  actor     text,
+  device    text,
+  device_id text,
+  tz        text
 );
 
 create table if not exists public.app_settings (
@@ -40,6 +44,15 @@ create table if not exists public.app_settings (
   budget    numeric default 0,
   currency  text default '৳',
   self_id   text default ''
+);
+
+create table if not exists public.places (
+  id    text primary key,
+  name  text not null,
+  area  text,
+  icon  text default 'pin',
+  done  boolean not null default false,
+  ord   int not null default 0
 );
 
 -- seed the single settings row
@@ -54,11 +67,12 @@ alter table public.members       enable row level security;
 alter table public.transactions  enable row level security;
 alter table public.audit         enable row level security;
 alter table public.app_settings  enable row level security;
+alter table public.places        enable row level security;
 
 do $$
 declare t text;
 begin
-  foreach t in array array['members','transactions','audit','app_settings'] loop
+  foreach t in array array['members','transactions','audit','app_settings','places'] loop
     execute format('drop policy if exists "public all" on public.%I', t);
     execute format(
       'create policy "public all" on public.%I for all to anon, authenticated using (true) with check (true)',
@@ -67,13 +81,14 @@ begin
   end loop;
 end $$;
 
-grant all on public.members, public.transactions, public.audit, public.app_settings
-  to anon, authenticated;
+grant all on public.members, public.transactions, public.audit,
+  public.app_settings, public.places to anon, authenticated;
 
 -- Optional: realtime cross-device sync (safe to skip)
 do $$
 begin
   alter publication supabase_realtime add table
-    public.members, public.transactions, public.audit, public.app_settings;
+    public.members, public.transactions, public.audit,
+    public.app_settings, public.places;
 exception when others then null;
 end $$;

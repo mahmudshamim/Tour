@@ -1701,6 +1701,20 @@ input {
   color: var(--text-dim);
   font-weight: 500;
 }
+.hist-origin,
+.log-origin {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 4px;
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+.hist-origin b,
+.log-origin b {
+  color: var(--green-text);
+  font-weight: 700;
+}
 .hist-changes {
   margin-top: 5px;
   display: flex;
@@ -1915,6 +1929,26 @@ input {
 .cur-field {
   max-width: 130px;
 }
+/* Trip name + currency on one row */
+.tc-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+.tc-trip {
+  flex: 1;
+  min-width: 0;
+}
+.tc-cur {
+  width: 92px;
+  flex-shrink: 0;
+}
+.tc-cur .cur-input {
+  text-align: center;
+  font-size: 16px;
+  font-weight: 700;
+}
 
 /* ============================================================
    Trip Plan — places checklist
@@ -1984,6 +2018,58 @@ input {
   font-weight: 700;
   transition: 0.18s;
 }
+.place-fields {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  animation: fadeSlide 0.2s ease;
+}
+.pf-name,
+.pf-area {
+  background: var(--inset);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  transition: 0.15s;
+}
+.pf-name {
+  width: 100%;
+  font-family: inherit;
+  font-size: 14.5px;
+  font-weight: 700;
+  color: var(--text);
+  padding: 8px 11px;
+  outline: none;
+}
+.pf-area {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 11px;
+  color: var(--text-muted);
+}
+.pf-sub {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: none;
+  outline: none;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+.pf-name::placeholder,
+.pf-sub::placeholder {
+  color: var(--text-dim);
+}
+.pf-name:focus,
+.pf-area:focus-within {
+  border-color: var(--green-deep);
+  background: var(--card);
+  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.16);
+}
 .place-area {
   display: flex;
   align-items: center;
@@ -2021,6 +2107,60 @@ input {
 .place-del:active {
   transform: scale(0.9);
   color: var(--neg);
+}
+.place-del.on {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  color: var(--neg);
+  border: 1px solid var(--border);
+  background: var(--card-2);
+  animation: fadeSlide 0.2s ease;
+}
+.place-del.on:active {
+  transform: scale(0.9);
+  border-color: var(--neg);
+  background: rgba(220, 38, 38, 0.14);
+}
+.place-row.editing {
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  background: var(--card-hover);
+  border-color: var(--border-strong);
+}
+
+.head-links {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.place-reorder {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex-shrink: 0;
+  animation: fadeSlide 0.2s ease;
+}
+.move-btn {
+  width: 32px;
+  height: 22px;
+  border-radius: 7px;
+  display: grid;
+  place-items: center;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  background: var(--card-2);
+  transition: 0.15s;
+}
+.move-btn:active:not(:disabled) {
+  transform: scale(0.9);
+  color: var(--green-text);
+  border-color: var(--green-deep);
+}
+.move-btn:disabled {
+  opacity: 0.32;
 }
 
 /* visited state */
@@ -2670,6 +2810,258 @@ input {
 }
 @keyframes introOut {
   to { opacity: 0; visibility: hidden; }
+}
+
+/* ============================================================
+   PIN modal + keypad
+   ============================================================ */
+.row-lock {
+  margin-left: auto;
+  color: var(--text-dim);
+}
+.row-lock-hint {
+  margin-left: auto;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  background: var(--inset);
+  padding: 3px 9px;
+  border-radius: 999px;
+}
+.pw-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin: 18px 0 0;
+  padding: 12px 14px;
+  border-radius: var(--r);
+  background: var(--card);
+  border: 1px solid var(--border);
+}
+.pw-field.shake {
+  animation: pinShake 0.35s ease;
+  border-color: var(--neg);
+}
+.pw-field input {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: none;
+  outline: none;
+  color: var(--text);
+  font-size: 15px;
+  letter-spacing: 0.04em;
+}
+.pw-eye {
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+.pin-modal .btn-primary {
+  margin-top: 6px;
+}
+.pin-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 120;
+  background: var(--overlay);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  animation: fadeSlide 0.25s ease;
+}
+.pin-modal {
+  position: relative;
+  width: 100%;
+  max-width: 340px;
+  padding: 26px 22px 22px;
+  border-radius: var(--r-xl);
+  background: var(--sheet-bg);
+  border: 1px solid var(--border);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.pin-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  color: var(--text-dim);
+  background: var(--card);
+  border: 1px solid var(--border);
+}
+.pin-lock {
+  width: 54px;
+  height: 54px;
+  border-radius: 16px;
+  display: grid;
+  place-items: center;
+  color: var(--accent-on-soft);
+  background: var(--accent-soft);
+  margin-bottom: 12px;
+}
+.pin-title {
+  font-size: 19px;
+  font-weight: 800;
+}
+.pin-sub {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-top: 3px;
+  text-align: center;
+}
+.pin-dots {
+  display: flex;
+  gap: 16px;
+  margin: 20px 0 6px;
+}
+.pin-dots.shake {
+  animation: pinShake 0.35s ease;
+}
+@keyframes pinShake {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-7px); }
+  40%, 80% { transform: translateX(7px); }
+}
+.pin-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid var(--border-strong);
+  transition: 0.15s;
+}
+.pin-dot.on {
+  background: var(--green-bright);
+  border-color: var(--green-deep);
+  box-shadow: 0 0 8px var(--green-glow);
+}
+.pin-err {
+  height: 16px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--neg);
+  margin-bottom: 10px;
+}
+.pin-keys {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  width: 100%;
+}
+.pin-key {
+  height: 56px;
+  border-radius: 14px;
+  font-size: 22px;
+  font-weight: 700;
+  display: grid;
+  place-items: center;
+  background: var(--card);
+  border: 1px solid var(--border);
+  color: var(--text);
+  transition: 0.12s;
+}
+.pin-key:active {
+  transform: scale(0.94);
+  background: var(--accent-soft);
+}
+.pin-key.ghost {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+}
+
+/* ============================================================
+   Confirm dialog — replaces native confirm()/alert()
+   ============================================================ */
+.confirm-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 120;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--overlay);
+  backdrop-filter: blur(6px);
+  animation: fadeSlide 0.2s ease;
+}
+.confirm-card {
+  width: 100%;
+  max-width: 320px;
+  padding: 24px 22px 18px;
+  border-radius: var(--r-lg);
+  background: var(--onboard-bg);
+  border: 1px solid var(--border);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+  text-align: center;
+  animation: popIn 0.24s cubic-bezier(0.22, 1.2, 0.4, 1);
+}
+.confirm-ico {
+  display: inline-grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  margin-bottom: 14px;
+  color: var(--green-text);
+  background: var(--accent-soft);
+}
+.confirm-ico.danger {
+  color: var(--neg);
+  background: color-mix(in srgb, var(--neg) 14%, transparent);
+}
+.confirm-title {
+  margin: 0 0 6px;
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+.confirm-msg {
+  margin: 0 0 20px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+.confirm-actions {
+  display: flex;
+  gap: 10px;
+}
+.confirm-btn {
+  flex: 1;
+  padding: 13px;
+  border-radius: var(--r);
+  font-size: 14.5px;
+  font-weight: 700;
+  transition: 0.15s;
+}
+.confirm-btn:active {
+  transform: scale(0.96);
+}
+.confirm-btn.ghost {
+  background: var(--card);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+}
+.confirm-btn.primary {
+  color: #06130a;
+  background: linear-gradient(145deg, var(--green-bright), var(--green-deep));
+  box-shadow: var(--shadow-btn);
+}
+.confirm-btn.danger {
+  color: #fff;
+  background: linear-gradient(145deg, #ef4444, #b91c1c);
+  box-shadow: 0 8px 20px rgba(220, 38, 38, 0.35);
 }
 
 /* Respect reduced motion */

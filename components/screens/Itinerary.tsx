@@ -1,14 +1,36 @@
 "use client";
 
-import { useState } from "react";
-import { Check, MapPin, Plus, Trash2, RotateCcw } from "lucide-react";
+import { useEffect, useState } from "react";
+import {
+  Check,
+  MapPin,
+  Plus,
+  Trash2,
+  RotateCcw,
+  Pencil,
+  ChevronUp,
+  ChevronDown,
+} from "lucide-react";
 import AppHeader from "../AppHeader";
-import { usePlaces, ICONS, PICKER } from "../places";
+import { usePlaces, ICONS, PICKER, type Place } from "../places";
+import { useUI } from "../ui";
 
 export default function Itinerary() {
-  const { places, toggle, add, remove, resetDone } = usePlaces();
+  const { places, toggle, add, update, move, remove, resetDone } = usePlaces();
+  const { confirm } = useUI();
   const [newName, setNewName] = useState("");
   const [newIcon, setNewIcon] = useState("pin");
+  const [editMode, setEditMode] = useState(false);
+
+  const confirmRemove = async (id: string, name: string) => {
+    const ok = await confirm({
+      title: `Remove “${name}”?`,
+      message: "This place will be taken off your trip plan.",
+      confirmLabel: "Remove",
+      danger: true,
+    });
+    if (ok) remove(id);
+  };
 
   const submit = () => {
     if (!newName.trim()) return;
@@ -31,11 +53,29 @@ export default function Itinerary() {
             <div className="section-title">সিলেট ট্রিপ</div>
             <div className="ov-sub">{places.length} places to explore</div>
           </div>
-          {done > 0 && (
-            <button className="link" onClick={resetDone}>
-              <RotateCcw size={14} /> Reset
-            </button>
-          )}
+          <div className="head-links">
+            {places.length > 0 && (
+              <button
+                className={`link ${editMode ? "on" : ""}`}
+                onClick={() => setEditMode((e) => !e)}
+              >
+                {editMode ? (
+                  <>
+                    <Check size={14} /> Done
+                  </>
+                ) : (
+                  <>
+                    <Pencil size={14} /> Edit
+                  </>
+                )}
+              </button>
+            )}
+            {done > 0 && !editMode && (
+              <button className="link" onClick={resetDone}>
+                <RotateCcw size={14} /> Reset
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -56,38 +96,21 @@ export default function Itinerary() {
       </div>
 
       <div style={{ paddingTop: 8 }}>
-        {places.map((p, i) => {
-          const Icon = ICONS[p.icon] ?? MapPin;
-          return (
-            <div
-              key={p.id}
-              className={`place-row rise ${p.done ? "done" : ""}`}
-              style={{ animationDelay: `${i * 0.04}s` }}
-            >
-              <button className="place-main" onClick={() => toggle(p.id)}>
-                <span className="place-ico">
-                  <Icon size={20} />
-                </span>
-                <div className="place-info">
-                  <div className="place-name">{p.name}</div>
-                  <div className="place-area">
-                    <MapPin size={12} /> {p.area}
-                  </div>
-                </div>
-                <span className={`place-check ${p.done ? "on" : ""}`}>
-                  {p.done && <Check size={16} strokeWidth={3} />}
-                </span>
-              </button>
-              <button
-                className="place-del"
-                aria-label="Remove place"
-                onClick={() => remove(p.id)}
-              >
-                <Trash2 size={15} />
-              </button>
-            </div>
-          );
-        })}
+        {places.map((p, i) => (
+          <PlaceRow
+            key={p.id}
+            place={p}
+            index={i}
+            editMode={editMode}
+            isFirst={i === 0}
+            isLast={i === places.length - 1}
+            onToggle={() => toggle(p.id)}
+            onUpdate={(patch) => update(p.id, patch)}
+            onMoveUp={() => move(p.id, -1)}
+            onMoveDown={() => move(p.id, 1)}
+            onDelete={() => confirmRemove(p.id, p.name)}
+          />
+        ))}
       </div>
 
       {/* add new place */}
@@ -125,6 +148,134 @@ export default function Itinerary() {
       </div>
 
       <div className="stack-lg" />
+    </div>
+  );
+}
+
+function PlaceRow({
+  place: p,
+  index,
+  editMode,
+  isFirst,
+  isLast,
+  onToggle,
+  onUpdate,
+  onMoveUp,
+  onMoveDown,
+  onDelete,
+}: {
+  place: Place;
+  index: number;
+  editMode: boolean;
+  isFirst: boolean;
+  isLast: boolean;
+  onToggle: () => void;
+  onUpdate: (patch: { name?: string; area?: string }) => void;
+  onMoveUp: () => void;
+  onMoveDown: () => void;
+  onDelete: () => void;
+}) {
+  const Icon = ICONS[p.icon] ?? MapPin;
+  const [name, setName] = useState(p.name);
+  const [area, setArea] = useState(p.area);
+
+  // Keep drafts in sync if the stored values change elsewhere.
+  useEffect(() => setName(p.name), [p.name]);
+  useEffect(() => setArea(p.area), [p.area]);
+
+  const commitName = () => {
+    const t = name.trim();
+    if (t && t !== p.name) onUpdate({ name: t });
+    else setName(p.name);
+  };
+  const commitArea = () => {
+    const t = area.trim();
+    if (t !== p.area) onUpdate({ area: t });
+  };
+  const blurOnEnter = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+  };
+
+  if (editMode) {
+    return (
+      <div
+        className="place-row editing rise"
+        style={{ animationDelay: `${index * 0.04}s` }}
+      >
+        <span className="place-ico">
+          <Icon size={20} />
+        </span>
+        <div className="place-fields">
+          <input
+            className="pf pf-name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={blurOnEnter}
+            onBlur={commitName}
+            placeholder="Place name"
+            aria-label="Place name"
+          />
+          <div className="pf-area">
+            <MapPin size={13} />
+            <input
+              className="pf pf-sub"
+              value={area}
+              onChange={(e) => setArea(e.target.value)}
+              onKeyDown={blurOnEnter}
+              onBlur={commitArea}
+              placeholder="Location / area"
+              aria-label="Location"
+            />
+          </div>
+        </div>
+        <div className="place-reorder">
+          <button
+            className="move-btn"
+            disabled={isFirst}
+            onClick={onMoveUp}
+            aria-label={`Move ${p.name} up`}
+          >
+            <ChevronUp size={16} />
+          </button>
+          <button
+            className="move-btn"
+            disabled={isLast}
+            onClick={onMoveDown}
+            aria-label={`Move ${p.name} down`}
+          >
+            <ChevronDown size={16} />
+          </button>
+        </div>
+        <button
+          className="place-del on"
+          aria-label={`Remove ${p.name}`}
+          onClick={onDelete}
+        >
+          <Trash2 size={16} />
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className={`place-row rise ${p.done ? "done" : ""}`}
+      style={{ animationDelay: `${index * 0.04}s` }}
+    >
+      <button className="place-main" onClick={onToggle}>
+        <span className="place-ico">
+          <Icon size={20} />
+        </span>
+        <div className="place-info">
+          <div className="place-name">{p.name}</div>
+          <div className="place-area">
+            <MapPin size={12} /> {p.area}
+          </div>
+        </div>
+        <span className={`place-check ${p.done ? "on" : ""}`}>
+          {p.done && <Check size={16} strokeWidth={3} />}
+        </span>
+      </button>
     </div>
   );
 }

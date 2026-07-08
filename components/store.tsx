@@ -17,6 +17,9 @@ import {
   uid,
   diff,
   computeBalances,
+  deviceLabel,
+  deviceId,
+  timezone,
   type State,
   type Member,
   type Txn,
@@ -261,6 +264,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const addTxn = useCallback(
     (data: Omit<Txn, "id" | "createdAt" | "updatedAt">) => {
       const now = Date.now();
+      const s = stateRef.current;
       const txn: Txn = { ...data, id: uid(), createdAt: now, updatedAt: now };
       const entry: AuditEntry = {
         id: uid(),
@@ -269,6 +273,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         amount: txn.amount,
         action: "created",
         at: now,
+        by: s.members.find((m) => m.id === s.settings.selfId)?.name,
+        device: deviceLabel(),
+        deviceId: deviceId(),
+        tz: timezone(),
       };
       dispatch({ type: "upsertTxn", txn, prepend: true });
       dispatch({ type: "addAudit", entry });
@@ -280,7 +288,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const updateTxn = useCallback(
     (id: string, data: Omit<Txn, "id" | "createdAt" | "updatedAt">) => {
-      const old = stateRef.current.txns.find((t) => t.id === id);
+      const s = stateRef.current;
+      const old = s.txns.find((t) => t.id === id);
       if (!old) return;
       const now = Date.now();
       const changes = diff(old, data);
@@ -293,6 +302,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         action: "updated",
         at: now,
         changes,
+        by: s.members.find((m) => m.id === s.settings.selfId)?.name,
+        device: deviceLabel(),
+        deviceId: deviceId(),
+        tz: timezone(),
       };
       dispatch({ type: "upsertTxn", txn });
       dispatch({ type: "addAudit", entry });
@@ -303,7 +316,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   );
 
   const deleteTxn = useCallback((id: string) => {
-    const old = stateRef.current.txns.find((t) => t.id === id);
+    const s = stateRef.current;
+    const old = s.txns.find((t) => t.id === id);
     if (!old) return;
     const now = Date.now();
     const entry: AuditEntry = {
@@ -313,6 +327,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       amount: old.amount,
       action: "deleted",
       at: now,
+      by: s.members.find((m) => m.id === s.settings.selfId)?.name,
+      device: deviceLabel(),
+      deviceId: deviceId(),
+      tz: timezone(),
     };
     dispatch({ type: "removeTxn", id });
     dispatch({ type: "addAudit", entry });

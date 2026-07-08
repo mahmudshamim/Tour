@@ -18,6 +18,15 @@ type Sheet =
   | { kind: "transactions" }
   | { kind: "log" };
 
+export type ConfirmOpts = {
+  title: string;
+  message?: string;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  danger?: boolean;
+};
+export type ConfirmReq = ConfirmOpts & { resolve: (v: boolean) => void };
+
 type UI = {
   sheet: Sheet;
   openAdd: () => void;
@@ -27,13 +36,30 @@ type UI = {
   openTransactions: () => void;
   openLog: () => void;
   close: () => void;
+  confirm: (opts: ConfirmOpts) => Promise<boolean>;
+  confirmReq: ConfirmReq | null;
+  settleConfirm: (v: boolean) => void;
 };
 
 const UICtx = createContext<UI | null>(null);
 
 export function UIProvider({ children }: { children: ReactNode }) {
   const [sheet, setSheet] = useState<Sheet>({ kind: "none" });
+  const [req, setReq] = useState<ConfirmReq | null>(null);
   const close = useCallback(() => setSheet({ kind: "none" }), []);
+
+  const confirm = useCallback(
+    (opts: ConfirmOpts) =>
+      new Promise<boolean>((resolve) => setReq({ ...opts, resolve })),
+    []
+  );
+  const settle = useCallback((v: boolean) => {
+    setReq((r) => {
+      if (r) r.resolve(v);
+      return null;
+    });
+  }, []);
+
   const value: UI = {
     sheet,
     openAdd: () => setSheet({ kind: "add" }),
@@ -43,6 +69,9 @@ export function UIProvider({ children }: { children: ReactNode }) {
     openTransactions: () => setSheet({ kind: "transactions" }),
     openLog: () => setSheet({ kind: "log" }),
     close,
+    confirm,
+    confirmReq: req,
+    settleConfirm: settle,
   };
   return <UICtx.Provider value={value}>{children}</UICtx.Provider>;
 }

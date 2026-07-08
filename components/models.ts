@@ -32,7 +32,44 @@ export type AuditEntry = {
   action: "created" | "updated" | "deleted";
   at: number;
   changes?: Change[];
+  by?: string; // who the acting device is set as ("You" member name)
+  device?: string; // best-effort browser · OS from user agent
+  deviceId?: string; // stable per-device id (groups actions from one device)
+  tz?: string; // IANA timezone of the acting device, e.g. "Asia/Dhaka"
 };
+
+/** Best-effort "Browser · OS" label from the user agent (spoofable). */
+export function deviceLabel(): string {
+  if (typeof navigator === "undefined") return "Unknown device";
+  const ua = navigator.userAgent;
+  const browser = /Edg\//.test(ua)
+    ? "Edge"
+    : /OPR\/|Opera/.test(ua)
+    ? "Opera"
+    : /SamsungBrowser/.test(ua)
+    ? "Samsung Internet"
+    : /Firefox\//.test(ua)
+    ? "Firefox"
+    : /Chrome\//.test(ua)
+    ? "Chrome"
+    : /Safari\//.test(ua)
+    ? "Safari"
+    : "Browser";
+  const os = /iPhone/.test(ua)
+    ? "iPhone"
+    : /iPad/.test(ua)
+    ? "iPad"
+    : /Android/.test(ua)
+    ? "Android"
+    : /Windows/.test(ua)
+    ? "Windows"
+    : /Mac OS X|Macintosh/.test(ua)
+    ? "Mac"
+    : /Linux/.test(ua)
+    ? "Linux"
+    : "device";
+  return `${browser} · ${os}`;
+}
 
 export type Settings = {
   tripName: string;
@@ -48,6 +85,15 @@ export type State = {
   settings: Settings;
 };
 
+export type Place = {
+  id: string;
+  name: string;
+  area: string;
+  icon: string;
+  done: boolean;
+  ord: number; // sort order (for reordering)
+};
+
 export const EMPTY: State = {
   members: [],
   txns: [],
@@ -59,6 +105,31 @@ export const uid = (): string =>
   typeof crypto !== "undefined" && crypto.randomUUID
     ? crypto.randomUUID()
     : Math.random().toString(36).slice(2) + Date.now().toString(36);
+
+/** Stable per-device id, persisted in localStorage. Groups a device's actions. */
+const DEVICE_KEY = "terra.device.id";
+export function deviceId(): string {
+  if (typeof localStorage === "undefined") return "";
+  try {
+    let id = localStorage.getItem(DEVICE_KEY);
+    if (!id) {
+      id = uid();
+      localStorage.setItem(DEVICE_KEY, id);
+    }
+    return id;
+  } catch {
+    return "";
+  }
+}
+
+/** IANA timezone of this device, e.g. "Asia/Dhaka". */
+export function timezone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+  } catch {
+    return "";
+  }
+}
 
 export type Balances = {
   balance: Record<string, number>; // remaining tk of each member (contribution - spent)

@@ -56,6 +56,14 @@ export default function ActivityLogSheet() {
                         </>
                       )}
                     </div>
+                    {(e.by || e.device || e.tz) && (
+                      <div className="log-origin">
+                        {e.by && <b>{e.by}</b>}
+                        {[e.device, e.tz].filter(Boolean).map((x, i) => (
+                          <span key={x}>{i > 0 || e.by ? " · " : ""}{x}</span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
               );
