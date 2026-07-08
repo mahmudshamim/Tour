@@ -11,7 +11,45 @@ const CAPTIONS = [
   "ব্যাগ রেডি, বন্ধুরা রেডি 🎒",
   "রুটিন বাদ, ট্রিপ চাই 🚗💨",
   "টাকা জমাই ঘুরতে যাই 🤑",
+  "চল পালাই, শান্তি পাই 🍃",
+  "ম্যাপ খুলে, পথ ভুলে 🗺️",
+  "ব্যাগে জামা, মনে মজা 🎒",
+  "চা হাতে, মেঘ সাথে ☕",
+  "টিকিট কাটা, মন ছোটা 🎫",
+  "শহর ছাড়ি, পাহাড় ধরি 🏔️",
+  "রোদে পুড়ি, স্মৃতি গড়ি 📸",
+  "পথ ডাকে, মন হাঁকে 🛣️",
+  "ফোন অফ, মুড অন 🔕",
+  "ঘুম কম, ঘোরা বেশি 🌙",
+  "কাজ ভুলে, পথে দুলে 🛺",
+  "দল বেঁধে, পথে নামি 🚐",
+  "মন উড়াল, ব্যাগ তৈরি ✈️",
+  "ঝামেলা দূরে, মন উড়ে 🎈",
 ];
+
+function drawPin(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  r: number
+) {
+  // teardrop body
+  ctx.fillStyle = "#ffffff";
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(cx - r * 0.72, cy + r * 0.45);
+  ctx.lineTo(cx + r * 0.72, cy + r * 0.45);
+  ctx.lineTo(cx, cy + r * 2);
+  ctx.closePath();
+  ctx.fill();
+  // inner hole (matches card green)
+  ctx.fillStyle = "#178a44";
+  ctx.beginPath();
+  ctx.arc(cx, cy, r * 0.42, 0, Math.PI * 2);
+  ctx.fill();
+}
 
 function roundRect(
   ctx: CanvasRenderingContext2D,
@@ -99,13 +137,20 @@ export async function shareTripCard(opts: { title: string; places: Stop[] }) {
   ctx.fillStyle = "#ffffff";
   ctx.fillText(caption, W / 2, 772);
 
-  // up to 3 spots preview
+  // up to 3 spots preview — custom pin icon + name
   const preview = places.slice(0, 3);
   ctx.font = `44px ${BN}`;
+  const gap = 18;
+  const pinW = 34;
   let y = 940;
   for (const p of preview) {
+    const textW = ctx.measureText(p.name).width;
+    const startX = (W - (pinW + gap + textW)) / 2;
+    drawPin(ctx, startX + pinW / 2, y - 16, 15);
+    ctx.textAlign = "left";
     ctx.fillStyle = "rgba(255,255,255,0.95)";
-    ctx.fillText(`📍 ${p.name}`, W / 2, y);
+    ctx.fillText(p.name, startX + pinW + gap, y);
+    ctx.textAlign = "center";
     y += 82;
   }
   if (places.length > 3) {
