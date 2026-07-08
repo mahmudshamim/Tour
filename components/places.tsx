@@ -142,16 +142,49 @@ export function PlacesProvider({ children }: { children: ReactNode }) {
       if (alive) setReady(true);
     })();
 
-    const unsub = dbConfigured
-      ? placesDb.onChange(async () => {
-          const res = await loadPlaces();
-          if (alive && res.ok) setPlaces(res.places.sort(byOrd));
-        })
-      : () => {};
+    if (!dbConfigured) {
+      return () => {
+        alive = false;
+      };
+    }
+
+    let inFlight = false;
+    let queued = false;
+    const refetch = async () => {
+      if (inFlight) {
+        queued = true;
+        return;
+      }
+      inFlight = true;
+      const res = await loadPlaces();
+      if (alive && res.ok) setPlaces(res.places.sort(byOrd));
+      inFlight = false;
+      if (queued && alive) {
+        queued = false;
+        refetch();
+      }
+    };
+
+    const unsub = placesDb.onChange(() => refetch());
+
+    const onVisible = () => {
+      if (document.visibilityState === "visible") refetch();
+    };
+    const onFocus = () => refetch();
+    window.addEventListener("focus", onFocus);
+    window.addEventListener("online", onFocus);
+    document.addEventListener("visibilitychange", onVisible);
+    const poll = window.setInterval(() => {
+      if (document.visibilityState === "visible") refetch();
+    }, 15000);
 
     return () => {
       alive = false;
       unsub();
+      window.removeEventListener("focus", onFocus);
+      window.removeEventListener("online", onFocus);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.clearInterval(poll);
     };
   }, []);
 

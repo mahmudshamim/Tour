@@ -156,34 +156,61 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     // paint immediately from cache (or empty); sync with Supabase in background
     setReady(true);
 
-    (async () => {
-      if (dbConfigured) {
-        setSyncing(true);
-        const loaded = await loadState();
-        if (alive && loaded.ok) {
-          dispatch({ type: "setAll", state: loaded.state });
-          saveCache(loaded.state);
-        } else if (alive && !loaded.ok) {
-          console.warn("[store] Supabase load failed:", loaded.error);
-        }
-        if (alive) setSyncing(false);
-      }
-    })();
+    if (!dbConfigured) return;
 
-    // realtime: refetch on any remote change
-    const unsub = dbConfigured
-      ? db.onChange(async () => {
-          const loaded = await loadState();
-          if (alive && loaded.ok) {
-            dispatch({ type: "setAll", state: loaded.state });
-            saveCache(loaded.state);
-          }
-        })
-      : () => {};
+    // Pull latest from the cloud. Coalesced so bursts don't stampede.
+    let inFlight = false;
+    let queued = false;
+    const refetch = async (showSpinner = false) => {
+      if (inFlight) {
+        queued = true;
+        return;
+      }
+      inFlight = true;
+      if (showSpinner) setSyncing(true);
+      const loaded = await loadState();
+      if (alive && loaded.ok) {
+        dispatch({ type: "setAll", state: loaded.state });
+        saveCache(loaded.state);
+      } else if (alive && !loaded.ok) {
+        console.warn("[store] Supabase load failed:", loaded.error);
+      }
+      if (showSpinner) setSyncing(false);
+      inFlight = false;
+      if (queued && alive) {
+        queued = false;
+        refetch();
+      }
+    };
+
+    refetch(true);
+
+    // 1) realtime push — instant when Supabase realtime is enabled on the tables
+    const unsub = db.onChange(() => refetch());
+
+    // 2) pull the moment this device becomes active again (tab focus / app
+    //    foreground / network back) — covers anything realtime missed
+    const onVisible = () => {
+      if (document.visibilityState === "visible") refetch();
+    };
+    const onFocus = () => refetch();
+    window.addEventListener("focus", onFocus);
+    window.addEventListener("online", onFocus);
+    document.addEventListener("visibilitychange", onVisible);
+
+    // 3) low-frequency safety poll while visible — guarantees convergence even
+    //    if realtime is off; skipped in the background to save requests
+    const poll = window.setInterval(() => {
+      if (document.visibilityState === "visible") refetch();
+    }, 15000);
 
     return () => {
       alive = false;
       unsub();
+      window.removeEventListener("focus", onFocus);
+      window.removeEventListener("online", onFocus);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.clearInterval(poll);
     };
   }, []);
 
