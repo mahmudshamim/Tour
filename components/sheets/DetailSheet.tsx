@@ -6,7 +6,7 @@ import { useStore, useMoney, type Txn } from "../store";
 import { useUI } from "../ui";
 
 export default function DetailSheet({ txn: initial }: { txn: Txn }) {
-  const { state, deleteTxn, memberById } = useStore();
+  const { state, archived, deleteTxn, memberById } = useStore();
   const money = useMoney();
   const { close, openEdit, confirm } = useUI();
 
@@ -18,6 +18,7 @@ export default function DetailSheet({ txn: initial }: { txn: Txn }) {
 
   const Icon = catIcon(txn.category);
   const isGroup = txn.kind === "group";
+  const isOwn = txn.kind === "own";
   const chargedTo = memberById(txn.member);
   const perHead =
     isGroup && txn.split.length ? txn.amount / txn.split.length : 0;
@@ -55,8 +56,12 @@ export default function DetailSheet({ txn: initial }: { txn: Txn }) {
           <div className="dg-cell">
             <div className="q-lbl">Type</div>
             <div className="dg-val">
-              <span className={`tag-pill ${isGroup ? "grp" : "per"}`}>
-                {isGroup ? "GROUP" : "PERSONAL"}
+              <span
+                className={`tag-pill ${
+                  isGroup ? "grp" : isOwn ? "own" : "per"
+                }`}
+              >
+                {isGroup ? "GROUP" : isOwn ? "OWN" : "PERSONAL"}
               </span>
             </div>
           </div>
@@ -73,7 +78,7 @@ export default function DetailSheet({ txn: initial }: { txn: Txn }) {
             </>
           ) : (
             <div className="dg-cell">
-              <div className="q-lbl">Charged to</div>
+              <div className="q-lbl">{isOwn ? "Own money" : "Charged to"}</div>
               <div className="dg-val">
                 <span
                   className="dot-avatar"
@@ -81,6 +86,12 @@ export default function DetailSheet({ txn: initial }: { txn: Txn }) {
                 />
                 {chargedTo?.name ?? "—"}
               </div>
+            </div>
+          )}
+          {isOwn && (
+            <div className="dg-cell">
+              <div className="q-lbl">Pool impact</div>
+              <div className="dg-val">None — outside the group</div>
             </div>
           )}
           <div className="dg-cell">
@@ -128,14 +139,20 @@ export default function DetailSheet({ txn: initial }: { txn: Txn }) {
           ))}
         </div>
 
-        <div className="btn-row">
-          <button className="btn-ghost" onClick={onDelete}>
-            <Trash2 size={17} /> Delete
+        {archived ? (
+          <button className="btn-primary" onClick={close}>
+            Close
           </button>
-          <button className="btn-primary flex1" onClick={() => openEdit(txn)}>
-            <Pencil size={17} /> Edit
-          </button>
-        </div>
+        ) : (
+          <div className="btn-row">
+            <button className="btn-ghost" onClick={onDelete}>
+              <Trash2 size={17} /> Delete
+            </button>
+            <button className="btn-primary flex1" onClick={() => openEdit(txn)}>
+              <Pencil size={17} /> Edit
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

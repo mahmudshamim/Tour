@@ -13,10 +13,12 @@ import {
 } from "lucide-react";
 import AppHeader from "../AppHeader";
 import { usePlaces, ICONS, PICKER, type Place } from "../places";
+import { useStore } from "../store";
 import { useUI } from "../ui";
 
 export default function Itinerary() {
   const { places, toggle, add, update, move, remove, resetDone } = usePlaces();
+  const { state, archived } = useStore();
   const { confirm } = useUI();
   const [newName, setNewName] = useState("");
   const [newIcon, setNewIcon] = useState("pin");
@@ -50,11 +52,13 @@ export default function Itinerary() {
       <div className="section-pad">
         <div className="section-head tight" style={{ marginTop: 8 }}>
           <div>
-            <div className="section-title">সিলেট ট্রিপ</div>
+            <div className="section-title">
+              {state.settings.tripName || "Trip Plan"}
+            </div>
             <div className="ov-sub">{places.length} places to explore</div>
           </div>
           <div className="head-links">
-            {places.length > 0 && (
+            {places.length > 0 && !archived && (
               <button
                 className={`link ${editMode ? "on" : ""}`}
                 onClick={() => setEditMode((e) => !e)}
@@ -70,7 +74,7 @@ export default function Itinerary() {
                 )}
               </button>
             )}
-            {done > 0 && !editMode && (
+            {done > 0 && !editMode && !archived && (
               <button className="link" onClick={resetDone}>
                 <RotateCcw size={14} /> Reset
               </button>
@@ -113,8 +117,8 @@ export default function Itinerary() {
         ))}
       </div>
 
-      {/* add new place */}
-      <div className="add-place-card">
+      {/* add new place — archived trips stay exactly as they were */}
+      <div className="add-place-card" hidden={archived}>
         <div className="split-title">Add a place</div>
         <div className="icon-picker">
           {PICKER.map((k) => {

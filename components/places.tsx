@@ -26,6 +26,8 @@ import {
 } from "lucide-react";
 import { uid, type Place } from "./models";
 import { dbConfigured, loadPlaces, placesDb } from "./db";
+import { useStore, LEGACY_TRIP_ID } from "./store";
+import * as outbox from "./outbox";
 
 export type { Place } from "./models";
 
@@ -63,8 +65,9 @@ const mk = (
   area: string,
   icon: string,
   ord: number
-): Place => ({ id, name, area, icon, ord, done: false });
+): Place => ({ id, tripId: LEGACY_TRIP_ID, name, area, icon, ord, done: false });
 
+/** Seeded once, onto the legacy trip only — later trips start empty. */
 const DEFAULTS: Place[] = [
   mk("ratargul", "রাতারগুল", "Swamp Forest", "trees", 0),
   mk("bholaganj", "ভোলাগঞ্জ সাদা পাথর", "White Stones", "mountain", 1),
@@ -78,20 +81,20 @@ const DEFAULTS: Place[] = [
   mk("shahporan", "শাহ পরান (রহ.) মাজার", "Mazar", "landmark", 9),
 ];
 
-const KEY = "terra.places.v2";
+const cacheKey = (tripId: string) => `terra.places.${tripId}.v1`;
 const byOrd = (a: Place, b: Place) => a.ord - b.ord;
 
-function loadCache(): Place[] | null {
+function loadCache(tripId: string): Place[] | null {
   try {
-    const raw = localStorage.getItem(KEY);
+    const raw = localStorage.getItem(cacheKey(tripId));
     return raw ? (JSON.parse(raw) as Place[]) : null;
   } catch {
     return null;
   }
 }
-function saveCache(list: Place[]) {
+function saveCache(tripId: string, list: Place[]) {
   try {
-    localStorage.setItem(KEY, JSON.stringify(list));
+    localStorage.setItem(cacheKey(tripId), JSON.stringify(list));
   } catch {
     /* ignore */
   }
@@ -111,33 +114,51 @@ type PlacesCtx = {
 const Ctx = createContext<PlacesCtx | null>(null);
 
 export function PlacesProvider({ children }: { children: ReactNode }) {
-  const [places, setPlaces] = useState<Place[]>(DEFAULTS);
+  const { state, archived } = useStore();
+  const tripId = state.tripId;
+  const isFirstTrip = state.trips.length <= 1 && tripId === LEGACY_TRIP_ID;
+
+  const [places, setPlaces] = useState<Place[]>([]);
   const [ready, setReady] = useState(false);
   const ref = useRef<Place[]>(places);
   ref.current = places;
 
+  const tripRef = useRef(tripId);
+  tripRef.current = tripId;
+  const archivedRef = useRef(archived);
+  archivedRef.current = archived;
+
   // load: cache first (instant), then Supabase (source of truth) + realtime
   useEffect(() => {
+    if (!tripId) return;
     let alive = true;
-    const cached = loadCache();
-    if (cached && cached.length) setPlaces([...cached].sort(byOrd));
+    const cached = loadCache(tripId);
+    setPlaces(cached && cached.length ? [...cached].sort(byOrd) : []);
+    setReady(false);
+
+    const seedDefaults = () => {
+      // only the very first trip gets the built-in Sylhet list
+      if (!isFirstTrip) return false;
+      placesDb.seed(DEFAULTS);
+      setPlaces(DEFAULTS);
+      return true;
+    };
 
     (async () => {
       if (dbConfigured) {
-        const res = await loadPlaces();
+        const res = await loadPlaces(tripId);
         if (alive && res.ok) {
-          if (res.places.length === 0) {
-            // fresh shared DB → seed the default Sylhet list into the cloud
-            placesDb.seed(DEFAULTS);
-            setPlaces(DEFAULTS);
+          if (res.places.length === 0 && !outbox.count()) {
+            if (!seedDefaults()) setPlaces([]);
           } else {
-            setPlaces(res.places.sort(byOrd));
+            setPlaces(outbox.applyPlaces(res.places, tripId));
           }
         } else if (alive && !res.ok && !(cached && cached.length)) {
-          setPlaces(DEFAULTS); // table missing / offline → local defaults
+          // table missing / offline → fall back to the local defaults
+          if (!seedDefaults()) setPlaces([]);
         }
       } else if (!(cached && cached.length)) {
-        setPlaces(DEFAULTS);
+        setPlaces(isFirstTrip ? DEFAULTS : []);
       }
       if (alive) setReady(true);
     })();
@@ -148,6 +169,9 @@ export function PlacesProvider({ children }: { children: ReactNode }) {
       };
     }
 
+    // The store owns flushing the outbox; here we only pull and replay
+    // whatever is still queued on top of the snapshot, so a checklist
+    // tick made offline isn't undone by the next poll.
     let inFlight = false;
     let queued = false;
     const refetch = async () => {
@@ -156,8 +180,13 @@ export function PlacesProvider({ children }: { children: ReactNode }) {
         return;
       }
       inFlight = true;
-      const res = await loadPlaces();
-      if (alive && res.ok) setPlaces(res.places.sort(byOrd));
+      const v0 = outbox.version();
+      const res = await loadPlaces(tripId);
+      if (alive && res.ok) {
+        // queue moved while we were fetching → snapshot is stale, redo
+        if (outbox.version() !== v0) queued = true;
+        else setPlaces(outbox.applyPlaces(res.places, tripId));
+      }
       inFlight = false;
       if (queued && alive) {
         queued = false;
@@ -186,14 +215,19 @@ export function PlacesProvider({ children }: { children: ReactNode }) {
       document.removeEventListener("visibilitychange", onVisible);
       window.clearInterval(poll);
     };
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tripId]);
 
   // mirror to cache on every change
   useEffect(() => {
-    if (ready) saveCache(places);
-  }, [places, ready]);
+    if (ready && tripId) saveCache(tripId, places);
+  }, [places, ready, tripId]);
+
+  /** Archived trips are frozen. */
+  const guard = () => !archivedRef.current && Boolean(tripRef.current);
 
   const toggle = useCallback((id: string) => {
+    if (!guard()) return;
     const p = ref.current.find((x) => x.id === id);
     if (!p) return;
     const np = { ...p, done: !p.done };
@@ -202,11 +236,13 @@ export function PlacesProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const add = useCallback((name: string, icon: string) => {
+    if (!guard()) return;
     const n = name.trim();
     if (!n) return;
     const maxOrd = ref.current.reduce((m, p) => Math.max(m, p.ord), -1);
     const place: Place = {
       id: uid(),
+      tripId: tripRef.current,
       name: n,
       area: "Added",
       icon,
@@ -219,12 +255,12 @@ export function PlacesProvider({ children }: { children: ReactNode }) {
 
   const update = useCallback(
     (id: string, patch: Partial<Pick<Place, "name" | "area">>) => {
+      if (!guard()) return;
       const p = ref.current.find((x) => x.id === id);
       if (!p) return;
       const np: Place = {
         ...p,
-        name:
-          patch.name !== undefined ? patch.name.trim() || p.name : p.name,
+        name: patch.name !== undefined ? patch.name.trim() || p.name : p.name,
         area: patch.area !== undefined ? patch.area.trim() : p.area,
       };
       setPlaces((ps) => ps.map((x) => (x.id === id ? np : x)));
@@ -234,6 +270,7 @@ export function PlacesProvider({ children }: { children: ReactNode }) {
   );
 
   const move = useCallback((id: string, dir: -1 | 1) => {
+    if (!guard()) return;
     const list = [...ref.current].sort(byOrd);
     const i = list.findIndex((p) => p.id === id);
     const j = i + dir;
@@ -250,11 +287,13 @@ export function PlacesProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const remove = useCallback((id: string) => {
+    if (!guard()) return;
     setPlaces((ps) => ps.filter((p) => p.id !== id));
-    placesDb.del(id);
+    placesDb.del(id, tripRef.current);
   }, []);
 
   const resetDone = useCallback(() => {
+    if (!guard()) return;
     const next = ref.current.map((p) => ({ ...p, done: false }));
     setPlaces(next);
     next.forEach((p) => placesDb.update(p));

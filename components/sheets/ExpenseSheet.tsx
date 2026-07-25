@@ -1,11 +1,17 @@
 "use client";
 
 import { useState } from "react";
-import { Check, Users, Settings2, User } from "lucide-react";
+import { Check, Users, Settings2, User, Wallet } from "lucide-react";
 import { CATEGORIES, type CategoryId } from "../constants";
 import { useStore, type Txn } from "../store";
 import { useUI } from "../ui";
 import type { TxnKind } from "../models";
+
+const KIND_HINT: Record<TxnKind, string> = {
+  group: "Split from the shared pool.",
+  personal: "Pool money, charged to one person.",
+  own: "Their own pocket — stays out of the pool and group totals.",
+};
 
 export default function ExpenseSheet({ editing }: { editing?: Txn }) {
   const { state, addTxn, updateTxn } = useStore();
@@ -44,7 +50,7 @@ export default function ExpenseSheet({ editing }: { editing?: Txn }) {
       category: cat,
       kind,
       split: kind === "group" ? split : [],
-      member: kind === "personal" ? member : "",
+      member: kind === "group" ? "" : member,
     };
     if (editing) updateTxn(editing.id, data);
     else addTxn(data);
@@ -116,7 +122,7 @@ export default function ExpenseSheet({ editing }: { editing?: Txn }) {
           ))}
         </div>
 
-        {/* Group vs Personal */}
+        {/* Where the money comes from */}
         <div className="seg">
           <button
             className={`seg-btn ${kind === "group" ? "on" : ""}`}
@@ -130,7 +136,14 @@ export default function ExpenseSheet({ editing }: { editing?: Txn }) {
           >
             <User size={16} /> Personal
           </button>
+          <button
+            className={`seg-btn ${kind === "own" ? "on" : ""}`}
+            onClick={() => setKind("own")}
+          >
+            <Wallet size={16} /> Own
+          </button>
         </div>
+        <div className="seg-hint">{KIND_HINT[kind]}</div>
 
         {kind === "group" ? (
           <>
@@ -159,7 +172,9 @@ export default function ExpenseSheet({ editing }: { editing?: Txn }) {
           </>
         ) : (
           <>
-            <div className="split-title">Charge to one person</div>
+            <div className="split-title">
+              {kind === "own" ? "Whose own money" : "Charge to one person"}
+            </div>
             <div className="chip-row">
               {members.map((m) => (
                 <button

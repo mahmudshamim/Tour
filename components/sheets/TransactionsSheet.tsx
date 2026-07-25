@@ -6,7 +6,7 @@ import { useUI } from "../ui";
 import TxnRow from "../TxnRow";
 
 export default function TransactionsSheet() {
-  const { state, totalSpent } = useStore();
+  const { state, totalSpent, balances } = useStore();
   const money = useMoney();
   const { close, openLog } = useUI();
   const txns = [...state.txns].sort((a, b) => b.createdAt - a.createdAt);
@@ -31,7 +31,15 @@ export default function TransactionsSheet() {
           <>
             <div className="list-total">
               <span>{txns.length} transactions</span>
-              <span className="num">{money(totalSpent)}</span>
+              <span className="num">
+                {money(totalSpent)}
+                {balances.ownTotal > 0 && (
+                  <small className="lt-own">
+                    {" "}
+                    + {money(balances.ownTotal)} own
+                  </small>
+                )}
+              </span>
             </div>
             <div className="scroll-list">
               {txns.map((t) => (

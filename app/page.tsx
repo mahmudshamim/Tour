@@ -18,7 +18,7 @@ import SheetHost from "@/components/sheets/SheetHost";
 
 function Shell() {
   const { theme } = useTheme();
-  const { ready } = useStore();
+  const { ready, archived } = useStore();
   const { openAdd } = useUI();
   const [tab, setTab] = useState<Tab>(() => {
     if (typeof window !== "undefined") {
@@ -46,13 +46,16 @@ function Shell() {
             {tab === "itinerary" && <Itinerary />}
             {tab === "group" && <Expenses />}
 
-            <button
-              className="fab fab-global"
-              onClick={openAdd}
-              aria-label="Add expense"
-            >
-              <Plus size={24} />
-            </button>
+            {/* archived trips are read-only — no way in to add anything */}
+            {!archived && (
+              <button
+                className="fab fab-global"
+                onClick={openAdd}
+                aria-label="Add expense"
+              >
+                <Plus size={24} />
+              </button>
+            )}
 
             <BottomNav active={tab} onChange={setTab} />
             <SheetHost />

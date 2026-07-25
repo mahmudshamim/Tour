@@ -1,6 +1,6 @@
 "use client";
 
-import { Users, Receipt, UserPlus, Wallet } from "lucide-react";
+import { Users, Receipt, UserPlus, Wallet, PiggyBank } from "lucide-react";
 import AppHeader from "../AppHeader";
 import TxnRow from "../TxnRow";
 import { initials } from "../constants";
@@ -97,6 +97,12 @@ export default function Expenses() {
                   <div className="m-status">
                     Deposited {money(m.contribution)} ·{" "}
                     <b>Spent {money(spent)}</b>
+                    {(balances.own[m.id] ?? 0) > 0 && (
+                      <span className="m-own">
+                        {" "}
+                        · own {money(balances.own[m.id])}
+                      </span>
+                    )}
                   </div>
                 </div>
                 <div className="m-bal">
@@ -107,6 +113,37 @@ export default function Expenses() {
             );
           })}
         </div>
+      )}
+
+      {balances.ownTotal > 0 && (
+        <>
+          <div className="section-pad">
+            <div className="section-head">
+              <div className="section-title row-title">
+                <PiggyBank size={19} /> Own Pocket
+              </div>
+              <span className="sec-note">outside the pool</span>
+            </div>
+          </div>
+          <div className="card list-card">
+            {state.members
+              .filter((m) => (balances.own[m.id] ?? 0) > 0)
+              .map((m) => (
+                <div className="own-row" key={m.id}>
+                  <span className="dot-avatar" style={{ background: m.color }} />
+                  <span className="own-name">
+                    {m.name}
+                    {m.id === self && <span className="you-badge">You</span>}
+                  </span>
+                  <span className="own-amt num">{money(balances.own[m.id])}</span>
+                </div>
+              ))}
+            <div className="own-row total">
+              <span className="own-name">Everyone</span>
+              <span className="own-amt num">{money(balances.ownTotal)}</span>
+            </div>
+          </div>
+        </>
       )}
 
       <div className="section-pad">

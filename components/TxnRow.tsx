@@ -13,9 +13,12 @@ export default function TxnRow({ txn, index = 0 }: { txn: Txn; index?: number })
   const perHead =
     isGroup && txn.split.length ? txn.amount / txn.split.length : 0;
   const chargedTo = memberById(txn.member);
-  const label = isGroup
-    ? `Group · Split ${txn.split.length} · ${money(perHead)} each`
-    : `Personal · ${chargedTo?.name ?? "—"}`;
+  const kindCls = isGroup ? "grp" : txn.kind === "own" ? "own" : "per";
+  const kindLabel = isGroup
+    ? "GROUP"
+    : txn.kind === "own"
+    ? "OWN"
+    : "PERSONAL";
 
   return (
     <button
@@ -32,11 +35,11 @@ export default function TxnRow({ txn, index = 0 }: { txn: Txn; index?: number })
           <span className="a-amt num">{money(txn.amount)}</span>
         </div>
         <div className="a-sub">
-          <span className={`tag-pill ${isGroup ? "grp" : "per"}`}>
-            {isGroup ? "GROUP" : "PERSONAL"}
-          </span>
+          <span className={`tag-pill ${kindCls}`}>{kindLabel}</span>
           {isGroup
             ? `Split ${txn.split.length} · ${money(perHead)} each`
+            : txn.kind === "own"
+            ? `${chargedTo?.name ?? "—"} · own pocket`
             : chargedTo?.name ?? "—"}
         </div>
       </div>

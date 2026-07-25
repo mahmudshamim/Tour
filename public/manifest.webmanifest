@@ -1,0 +1,25 @@
+{
+  "name": "TerraExplore — Tour Planner",
+  "short_name": "TerraExplore",
+  "description": "Trip plan, live map and shared group expenses — works offline.",
+  "start_url": "/?nointro",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0a0f0a",
+  "theme_color": "#0a0f0a",
+  "icons": [
+    {
+      "src": "/pwa-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-maskable.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}
