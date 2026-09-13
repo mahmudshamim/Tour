@@ -1,5 +1,6 @@
 "use client";
 
+import { Paperclip } from "lucide-react";
 import { txnIcon, fmtTime, fmtWhen } from "./constants";
 import { useStore, useMoney, type Txn } from "./store";
 import { useUI } from "./ui";
@@ -40,7 +41,12 @@ export default function TxnRow({
         <Icon size={20} />
       </span>
       <div className="a-info">
-        <div className="a-name">{txn.title}</div>
+        <div className="a-name">
+          {txn.title}
+          {txn.receiptAt > 0 && (
+            <Paperclip size={13} className="a-clip" aria-label="Has a receipt" />
+          )}
+        </div>
         <div className="a-sub">
           <span className={`tag-pill ${kindCls}`}>{kindLabel}</span>
           {isGroup

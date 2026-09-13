@@ -24,7 +24,7 @@ import {
   Camera,
   type LucideIcon,
 } from "lucide-react";
-import { uid, placesCacheKey, type Place } from "./models";
+import { uid, placesCacheKey, planOrder, type Place } from "./models";
 import { dbConfigured, loadPlaces, placesDb } from "./db";
 import { useStore } from "./store";
 import * as outbox from "./outbox";
@@ -64,7 +64,11 @@ const byOrd = (a: Place, b: Place) => a.ord - b.ord;
 function loadCache(tripId: string): Place[] | null {
   try {
     const raw = localStorage.getItem(placesCacheKey(tripId));
-    return raw ? (JSON.parse(raw) as Place[]) : null;
+    return raw
+      ? (JSON.parse(raw) as Partial<Place>[]).map(
+          (p) => ({ day: 0, time: "", lat: null, lng: null, ...p }) as Place
+        )
+      : null;
   } catch {
     return null;
   }
@@ -77,12 +81,38 @@ function saveCache(tripId: string, list: Place[]) {
   }
 }
 
+export type PlacePatch = Partial<Pick<Place, "name" | "area" | "day" | "time" | "lat" | "lng">>;
+
+/** Google Maps: turn-by-turn to a pinned stop, else a search for it. */
+export const mapsUrl = (p: Place, destination: string) =>
+  p.lat != null && p.lng != null
+    ? `https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}`
+    : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+        [p.name, p.area, destination].filter(Boolean).join(", ")
+      )}`;
+
+/** The stop a place can swap order with: same day, same time, next in
+ *  plan order (timed stops are ordered by their time instead). */
+export function swapTarget(list: Place[], id: string, dir: -1 | 1): Place | undefined {
+  const sorted = [...list].sort(planOrder);
+  const i = sorted.findIndex((p) => p.id === id);
+  const p = sorted[i];
+  const q = sorted[i + dir];
+  return p && q && q.day === p.day && q.time === p.time ? q : undefined;
+}
+
 type PlacesCtx = {
   places: Place[];
   ready: boolean;
   toggle: (id: string) => void;
-  add: (name: string, icon: string) => void;
-  update: (id: string, patch: Partial<Pick<Place, "name" | "area">>) => void;
+  add: (
+    name: string,
+    icon: string,
+    day?: number,
+    time?: string,
+    at?: [number, number] | null
+  ) => void;
+  update: (id: string, patch: PlacePatch) => void;
   move: (id: string, dir: -1 | 1) => void;
   remove: (id: string) => void;
   resetDone: () => void;
@@ -203,7 +233,8 @@ export function PlacesProvider({ children }: { children: ReactNode }) {
     placesDb.update(np);
   }, []);
 
-  const add = useCallback((name: string, icon: string) => {
+  const add = useCallback(
+    (name: string, icon: string, day = 0, time = "", at: [number, number] | null = null) => {
     if (!guard()) return;
     const n = name.trim();
     if (!n) return;
@@ -212,22 +243,29 @@ export function PlacesProvider({ children }: { children: ReactNode }) {
       id: uid(),
       tripId: tripRef.current,
       name: n,
-      area: "Added",
+      area: "",
       icon,
       done: false,
       ord: maxOrd + 1,
+      day,
+      time,
+      lat: at ? +at[0].toFixed(6) : null,
+      lng: at ? +at[1].toFixed(6) : null,
     };
     setPlaces((ps) => [...ps, place]);
     placesDb.insert(place);
-  }, []);
+    },
+    []
+  );
 
   const update = useCallback(
-    (id: string, patch: Partial<Pick<Place, "name" | "area">>) => {
+    (id: string, patch: PlacePatch) => {
       if (!guard()) return;
       const p = ref.current.find((x) => x.id === id);
       if (!p) return;
       const np: Place = {
         ...p,
+        ...patch,
         name: patch.name !== undefined ? patch.name.trim() || p.name : p.name,
         area: patch.area !== undefined ? patch.area.trim() : p.area,
       };
@@ -239,12 +277,9 @@ export function PlacesProvider({ children }: { children: ReactNode }) {
 
   const move = useCallback((id: string, dir: -1 | 1) => {
     if (!guard()) return;
-    const list = [...ref.current].sort(byOrd);
-    const i = list.findIndex((p) => p.id === id);
-    const j = i + dir;
-    if (i < 0 || j < 0 || j >= list.length) return;
-    const a = list[i];
-    const b = list[j];
+    const a = ref.current.find((p) => p.id === id);
+    const b = swapTarget(ref.current, id, dir);
+    if (!a || !b) return;
     const na = { ...a, ord: b.ord };
     const nb = { ...b, ord: a.ord };
     setPlaces((ps) =>

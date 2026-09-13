@@ -19,7 +19,26 @@ One app for every tour: each one has its own people, money, places, look and lin
 - **Edit lock** — viewing is open, editing needs a password, checked by the
   database (see below)
 - Overview with budget ring, countdown ("In 12 days" / "Day 2 of 4"), next stop
-- Map & Trip Plan (route visual + places checklist)
+- **Day-by-day plan** — put stops on Day 1, 2, … with a time; unplanned ones
+  wait under "Anytime"
+- **Live map** — OpenStreetMap (Leaflet), made for use on the trip:
+  - opens on today's stops; pins coloured by day, filter by day
+  - the real **road route** between stops with km and drive time per leg
+    (OSRM); the last route is kept for offline
+  - your **live location**, distance to every stop, the nearest one, and
+    **Share my location** (a Google Maps link for the group chat)
+  - **What's around**: ATM, pharmacy, hospital, fuel, food, stay, mosque,
+    toilet, police (Overpass / OSM data) — plus a one-tap **999** call
+  - tap a pin → directions, distance, mark visited; **Pin here** saves the
+    spot you're standing on as a stop (GPS works with no signal)
+  - **Terrain** layer (contours, for the hills) and full screen
+  - map tiles you've looked at stay available offline; the drawn route
+    view needs nothing at all
+- **Settle-up** — who holds the pool's cash; everyone else's payment to/from
+  them; tick each one off as it's paid
+- **Tour report** — chat-ready summary, Excel/Sheets file (CSV, Bangla-safe),
+  or PDF through the phone's Print → Save as PDF
+- **Receipt photos** on expenses (shrunk on the phone, work offline)
 - **Expenses & group balances** — split from the pool, charge one person, or log
   **own-pocket** spend that never touches the group's money. Each expense has
   its own date & time (editable — log a no-signal day later, on the right day),
@@ -27,7 +46,7 @@ One app for every tour: each one has its own people, money, places, look and lin
 - Full **activity history** — every add/edit/delete recorded
 - **Works offline** — every write is queued in a durable outbox and flushed when
   the network returns; installable as a PWA
-- Light (default white) + dark theme
+- Light (default white) + dark theme, remembered per device
 
 ## Edit lock
 Anyone with the link can view every tour. Adding or changing anything needs the
@@ -44,6 +63,10 @@ a private schema the API can't reach, and never appears in the app's code.
   `select terra_private.set_password('new-password');` — this also signs every
   device out. Editors can change it in the app too (Settings → Password).
 - **Sign every device out:** Settings → Sign out all devices.
+- **Co-organiser password (per tour):** the organiser can give one tour its own
+  password (Edit tour → Co-organiser password). Whoever has it can edit that
+  tour only — not other tours, not new tours, not deleting. The database
+  checks every row they write belongs to that tour.
 - **Brute-force guard:** after 20 wrong guesses in 15 minutes, logins pause for
   15 minutes (devices already unlocked keep working). To clear it early:
   `delete from terra_private.login_fails where at is not null;`
@@ -97,6 +120,9 @@ pnpm dev                     # http://localhost:5005
 **Existing database** — if it predates multiple tours, run
 [`supabase-trips.sql`](supabase-trips.sql) first (it folds old rows onto one
 tour). Then steps 2 and 3 above. Every script is idempotent, so re-running is safe.
+
+**Updating** — whenever `supabase-edit-lock.sql` changes, run the whole file
+again. It keeps the password, the data and every unlocked device.
 
 Until the edit-lock script runs, the app still shows everything, but unlocking
 says `Edit lock not installed` and changes wait in the queue.

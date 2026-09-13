@@ -1,22 +1,18 @@
 /* ============================================================
-   Cover photos on this device.
+   Tour cover photos on this device (bytes live in photoStore).
 
-   Photos live in Cache Storage, not localStorage: localStorage is
-   small and it's where the outbox of unsynced expenses lives — a few
-   photos must never be able to crowd that out. A tiny index of which
-   version each tour's photo is (localStorage) decides what to fetch.
-
-   Tours without their own photo can still get a built-in one for the
-   place (a tea garden for Sylhet) — bundled, so it works offline.
+   A tiny index of which version of each tour's photo this device
+   holds (localStorage) decides what to download. Tours without their
+   own photo can still get a built-in one for the place — a tea garden
+   for Sylhet — bundled, so it works offline.
    ============================================================ */
 
 import { useEffect, useSyncExternalStore } from "react";
 import { loadCover, loadCoverIndex } from "./db";
 import { sceneFor } from "./CoverArt";
+import { putPhoto, dropPhoto, getPhoto, peek, subscribe, snapshot } from "./photoStore";
 
-const CACHE = "terra-covers-v1";
 const IDX_KEY = "terra.covers.v1"; // { [tripId]: updatedAt } held on this device
-const keyOf = (tripId: string) => `/__terra/cover/${encodeURIComponent(tripId)}`;
 
 /** Built-in photos for places that have one (Unsplash License). */
 const STOCK: Record<string, string> = {
@@ -24,30 +20,6 @@ const STOCK: Record<string, string> = {
 };
 export const stockPhoto = (cover: string): string | null =>
   STOCK[sceneFor(cover)] ?? null;
-
-const mem = new Map<string, string | null>(); // tripId → photo (null = none)
-const listeners = new Set<() => void>();
-let version = 0;
-
-const emit = () => {
-  version++;
-  listeners.forEach((l) => l());
-};
-const subscribe = (cb: () => void) => {
-  listeners.add(cb);
-  return () => {
-    listeners.delete(cb);
-  };
-};
-const snapshot = () => version;
-
-async function openCache(): Promise<Cache | null> {
-  try {
-    return typeof caches !== "undefined" ? await caches.open(CACHE) : null;
-  } catch {
-    return null; // not a secure context (plain-http LAN address) → memory only
-  }
-}
 
 function readIdx(): Record<string, number> {
   try {
@@ -70,44 +42,30 @@ export async function setLocalCover(
   photo: string | null,
   updatedAt = Date.now()
 ) {
-  mem.set(tripId, photo);
-  emit();
   const idx = readIdx();
-  const cache = await openCache();
   if (photo) {
     idx[tripId] = updatedAt;
-    await cache?.put(keyOf(tripId), new Response(photo)).catch(() => {});
+    await putPhoto("covers", tripId, photo);
   } else {
     delete idx[tripId];
-    await cache?.delete(keyOf(tripId)).catch(() => {});
+    await dropPhoto("covers", tripId);
   }
   writeIdx(idx);
 }
 
-async function loadLocal(tripId: string) {
-  if (mem.has(tripId)) return;
-  mem.set(tripId, null); // "looked" — don't read twice
-  const cache = await openCache();
-  const hit = await cache?.match(keyOf(tripId)).catch(() => undefined);
-  if (hit) {
-    mem.set(tripId, await hit.text());
-    emit();
-  }
-}
+/** The photo bytes for an upload that's about to go out. */
+export const coverForUpload = (tripId: string) => getPhoto("covers", tripId);
 
 /**
  * Bring this device's photos in line with the cloud. Photos changed here
  * and still queued (`pending`) are left alone — they win until uploaded.
  */
-export async function syncCovers(
-  tripIds: string[],
-  pending: Record<string, string | null>
-) {
+export async function syncCovers(tripIds: string[], pending: Set<string>) {
   const res = await loadCoverIndex();
   if (!res.ok) return;
   const idx = readIdx();
   for (const id of tripIds) {
-    if (id in pending) continue;
+    if (pending.has(id)) continue;
     const server = res.index[id];
     if (!server) {
       if (idx[id]) await setLocalCover(id, null);
@@ -123,9 +81,9 @@ export async function syncCovers(
 export function useCover(tripId: string | undefined): string | null {
   useSyncExternalStore(subscribe, snapshot, () => 0);
   useEffect(() => {
-    if (tripId) loadLocal(tripId);
+    if (tripId) getPhoto("covers", tripId);
   }, [tripId]);
-  return tripId ? mem.get(tripId) ?? null : null;
+  return tripId ? peek("covers", tripId) ?? null : null;
 }
 
 /** What to show on a tour's cover: its own photo, else the place's

@@ -17,6 +17,7 @@ import {
   Pencil,
   ChevronRight,
   AlertTriangle,
+  FileText,
 } from "lucide-react";
 import { initials } from "../constants";
 import { useStore, tripStatsOf } from "../store";
@@ -135,6 +136,7 @@ export default function SettingsSheet() {
     writeStatus,
     archived,
     canEdit,
+    isOrganiser,
     readOnly,
     selfId,
     setSelf,
@@ -145,7 +147,7 @@ export default function SettingsSheet() {
     clearAll,
     lock,
   } = useStore();
-  const { close, openLog, confirm, openUnlock, openTrip, toast, setTab } = useUI();
+  const { close, openLog, confirm, openUnlock, openTrip, toast, setTab, openReport } = useUI();
   const symbol = trip?.currency || "৳";
 
   const [newName, setNewName] = useState("");
@@ -238,12 +240,16 @@ export default function SettingsSheet() {
             </span>
             <div className="ac-body">
               <div className="ac-title">
-                {canEdit ? "Editing unlocked" : "View only"}
+                {isOrganiser
+                  ? "Editing unlocked — every tour"
+                  : canEdit
+                  ? "Editing unlocked — this tour only"
+                  : "View only"}
               </div>
               <div className="ac-sub">
                 {canEdit
                   ? "Stays unlocked offline. Changes save for everyone once there's signal."
-                  : "Anyone with the link can view. Editing needs the password."}
+                  : "Anyone with the link can view. Editing needs the organiser or this tour's password."}
               </div>
             </div>
             {!canEdit && (
@@ -259,9 +265,11 @@ export default function SettingsSheet() {
               <button className="row-btn" onClick={() => lock().then(() => toast("Locked — view only"))}>
                 <Lock size={16} /> Lock
               </button>
-              <button className="row-btn" onClick={() => setPwForm((v) => !v)}>
-                <KeyRound size={16} /> Password
-              </button>
+              {isOrganiser && (
+                <button className="row-btn" onClick={() => setPwForm((v) => !v)}>
+                  <KeyRound size={16} /> Password
+                </button>
+              )}
             </div>
             {pwForm && <ChangePassword onDone={() => setPwForm(false)} />}
           </>
@@ -295,6 +303,13 @@ export default function SettingsSheet() {
               </div>
             )}
           </>
+        )}
+
+        {trip && (
+          <button className="row-btn" onClick={openReport}>
+            <FileText size={17} /> Tour report
+            <span className="row-lock-hint">PDF · Excel</span>
+          </button>
         )}
 
         {/* ---- People + deposits ---- */}
@@ -435,6 +450,7 @@ export default function SettingsSheet() {
               <History size={17} /> Activity log
               <span className="row-count">{state.audit.length}</span>
             </button>
+            {isOrganiser && (
             <button
               className="row-btn"
               onClick={() => {
@@ -446,14 +462,17 @@ export default function SettingsSheet() {
             >
               <Database size={17} /> Add a demo tour
             </button>
-            {configured && (
+            )}
+            {configured && isOrganiser && (
               <button className="row-btn" onClick={signOutAll}>
                 <LogOut size={17} /> Sign out all devices
               </button>
             )}
-            <button className="row-btn danger" onClick={doClear}>
-              <Eraser size={17} /> Erase every tour
-            </button>
+            {isOrganiser && (
+              <button className="row-btn danger" onClick={doClear}>
+                <Eraser size={17} /> Erase every tour
+              </button>
+            )}
           </>
         )}
 

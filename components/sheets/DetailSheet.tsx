@@ -1,6 +1,9 @@
 "use client";
 
-import { Pencil, Trash2, ArrowRight } from "lucide-react";
+import { useState } from "react";
+import { Pencil, Trash2, ArrowRight, Receipt as ReceiptIcon } from "lucide-react";
+import { useReceipt } from "../receipts";
+import PhotoViewer from "../PhotoViewer";
 import { txnIcon, catLabel, fmtDateTime, fmtDay, fmtTime } from "../constants";
 import { useStore, useMoney, type Txn } from "../store";
 import { useUI } from "../ui";
@@ -20,6 +23,8 @@ export default function DetailSheet({ txn: initial }: { txn: Txn }) {
   const at = txn.spentAt || txn.createdAt;
   // logged well after it happened (a no-signal day) → say both
   const loggedLater = Math.abs(txn.createdAt - at) > 10 * 60_000;
+  const receipt = useReceipt(txn);
+  const [viewing, setViewing] = useState(false);
   const isGroup = txn.kind === "group";
   const isOwn = txn.kind === "own";
   const chargedTo = memberById(txn.member);
@@ -111,6 +116,25 @@ export default function DetailSheet({ txn: initial }: { txn: Txn }) {
           )}
         </div>
 
+        {txn.receiptAt > 0 && (
+          <>
+            <div className="split-title">Receipt</div>
+            {receipt && receipt !== "loading" ? (
+              <button className="receipt-thumb" onClick={() => setViewing(true)}>
+                <img src={receipt} alt="Receipt" />
+                <span>Tap to open</span>
+              </button>
+            ) : (
+              <div className="receipt-missing">
+                <ReceiptIcon size={18} />
+                {receipt === "loading"
+                  ? "Loading the receipt…"
+                  : "Not on this phone yet — it downloads once there's signal."}
+              </div>
+            )}
+          </>
+        )}
+
         <div className="split-title">History</div>
         <div className="hist">
           {history.map((h) => (
@@ -165,6 +189,9 @@ export default function DetailSheet({ txn: initial }: { txn: Txn }) {
           </div>
         )}
       </div>
+      {viewing && receipt && receipt !== "loading" && (
+        <PhotoViewer src={receipt} onClose={() => setViewing(false)} />
+      )}
     </div>
   );
 }

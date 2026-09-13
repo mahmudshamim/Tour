@@ -1,7 +1,7 @@
 "use client";
 
 import type { CSSProperties } from "react";
-import { MapPin, Receipt, Flag, ChevronRight, CalendarRange, PartyPopper } from "lucide-react";
+import { MapPin, Receipt, Flag, ChevronRight, CalendarRange, PartyPopper, Clock3 } from "lucide-react";
 import AppHeader from "../AppHeader";
 import CoverArt, { CoverPhoto } from "../CoverArt";
 import { useTourPhoto } from "../covers";
@@ -11,7 +11,7 @@ import { useStore, useMoney, tripStatsOf } from "../store";
 import { usePlaces, ICONS } from "../places";
 import { useUI } from "../ui";
 import { useCountUp, useMounted } from "../hooks";
-import { accentOf, byWhen, phaseLabel, tourDates, tripPhase } from "../models";
+import { accentOf, byWhen, fmtClock, phaseLabel, planOrder, tourDates, tripPhase } from "../models";
 
 const R = 74;
 const C = 2 * Math.PI * R;
@@ -42,7 +42,7 @@ export default function Dashboard() {
   const phase = trip ? phaseLabel(tripPhase(trip)) : "";
   const { first, last } = tripStatsOf([], state.txns, []);
   const dates = trip ? tourDates(trip, first, last).text : "";
-  const next = places.find((p) => !p.done);
+  const next = [...places].sort(planOrder).find((p) => !p.done);
   const explored = places.filter((p) => p.done).length;
   const NextIcon = next ? ICONS[next.icon] ?? MapPin : MapPin;
   const photo = useTourPhoto(trip);
@@ -153,6 +153,12 @@ export default function Dashboard() {
             <span className="badge-tag">NEXT STOP</span>
             <div className="title">{next.name}</div>
             <div className="next-meta">
+              {next.day > 0 && (
+                <span>
+                  <Clock3 size={13} /> Day {next.day}
+                  {next.time ? ` · ${fmtClock(next.time)}` : ""}
+                </span>
+              )}
               {(next.area || trip?.destination) && (
                 <span>
                   <MapPin size={13} /> {next.area || trip?.destination}

@@ -20,7 +20,7 @@ import {
   type Txn,
   type AuditEntry,
   type Place,
-  type Cover,
+  type PhotoRef,
 } from "./models";
 import type { TripData } from "./db";
 
@@ -36,8 +36,10 @@ export type Op =
   | { t: "audit.put"; v: AuditEntry }
   | { t: "place.put"; v: Place }
   | { t: "place.del"; id: string; tripId: string }
-  | { t: "cover.put"; v: Cover }
-  | { t: "cover.del"; id: string; tripId: string };
+  | { t: "cover.put"; v: PhotoRef }
+  | { t: "cover.del"; id: string; tripId: string }
+  | { t: "receipt.put"; v: PhotoRef }
+  | { t: "receipt.del"; id: string; tripId: string };
 
 export type Entry = { id: string; op: Op; at: number; tries: number };
 
@@ -95,6 +97,10 @@ const opTrip = (op: Op): string =>
     : "v" in op
     ? op.v.tripId
     : op.tripId;
+
+/** The tour whose edit rights an op needs — which token uploads it. */
+export const opScope = (op: Op): string =>
+  op.t === "trip.put" ? op.v.id : op.t === "trip.del" ? op.id : opTrip(op);
 
 /* ---- public API ---- */
 
@@ -257,13 +263,13 @@ export function applyTrips(trips: Trip[], entries: Entry[] = read()): Trip[] {
   return [...out].sort((a, b) => b.createdAt - a.createdAt);
 }
 
-/** Cover photos changed here but not uploaded yet: tripId → photo, or
- *  null for a removal. These win over whatever the server has. */
-export function pendingCovers(entries: Entry[] = read()): Record<string, string | null> {
-  const out: Record<string, string | null> = {};
+/** Tours whose cover was changed here and not uploaded yet — these win
+ *  over whatever the server has. */
+export function pendingCovers(entries: Entry[] = read()): Set<string> {
+  const out = new Set<string>();
   for (const { op } of entries) {
-    if (op.t === "cover.put") out[op.v.id] = op.v.photo;
-    else if (op.t === "cover.del") out[op.id] = null;
+    if (op.t === "cover.put") out.add(op.v.id);
+    else if (op.t === "cover.del") out.add(op.id);
   }
   return out;
 }

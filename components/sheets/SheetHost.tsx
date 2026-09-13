@@ -7,6 +7,9 @@ import TransactionsSheet from "./TransactionsSheet";
 import ActivityLogSheet from "./ActivityLogSheet";
 import SettingsSheet from "./SettingsSheet";
 import TripSheet from "./TripSheet";
+import SettleSheet from "./SettleSheet";
+import ReportSheet from "./ReportSheet";
+import PlaceLocationSheet from "./PlaceLocationSheet";
 import ConfirmModal from "../ConfirmModal";
 
 export default function SheetHost() {
@@ -28,6 +31,12 @@ export default function SheetHost() {
         return <SettingsSheet />;
       case "trip":
         return <TripSheet key={sheet.tripId ?? "new"} tripId={sheet.tripId} />;
+      case "settle":
+        return <SettleSheet />;
+      case "report":
+        return <ReportSheet />;
+      case "placeLoc":
+        return <PlaceLocationSheet key={sheet.placeId} placeId={sheet.placeId} />;
       default:
         return null;
     }

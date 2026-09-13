@@ -9,7 +9,7 @@ import { lockMessage } from "./editLock";
 /** Password → edit session for this device. Checked by the database,
  *  so there is no password anywhere in the app's own code. */
 export default function UnlockModal() {
-  const { unlock } = useStore();
+  const { unlock, state } = useStore();
   const { closeUnlock, toast } = useUI();
   const [val, setVal] = useState("");
   const [show, setShow] = useState(false);
@@ -28,7 +28,8 @@ export default function UnlockModal() {
     const res = await unlock(val);
     setBusy(false);
     if (res.ok) {
-      toast("Editing unlocked on this device");
+      const tour = state.trips.find((t) => t.id === res.scope);
+      toast(tour ? `Editing unlocked for “${tour.name}” only` : "Editing unlocked on this device");
       closeUnlock(true);
       return;
     }
@@ -47,8 +48,8 @@ export default function UnlockModal() {
         </span>
         <div className="pin-title">Unlock editing</div>
         <div className="pin-sub">
-          Anyone with the link can view. Adding or changing anything needs the
-          tour password.
+          Anyone with the link can view. Editing needs the organiser password —
+          or this tour&apos;s own co-organiser password.
         </div>
 
         <div className={`pw-field ${err ? "shake" : ""}`} key={err}>

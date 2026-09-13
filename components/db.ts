@@ -8,10 +8,12 @@ import {
   type AuditEntry,
   type Place,
   type AccentId,
-  type Cover,
+  type PhotoRef,
+  receiptKey,
 } from "./models";
 import * as outbox from "./outbox";
 import * as editLock from "./editLock";
+import { getPhoto } from "./photoStore";
 
 export const dbConfigured = isConfigured;
 
@@ -43,6 +45,8 @@ const tripToRow = (t: Trip) => ({
   note: t.note,
   distance_km: t.distanceKm || 0,
   travel_time: t.travelTime,
+  holder_id: t.holderId ?? "",
+  settled: t.settled ?? {},
 });
 const rowToTrip = (r: any): Trip => ({
   id: r.id,
@@ -64,6 +68,8 @@ const rowToTrip = (r: any): Trip => ({
   note: r.note ?? "",
   distanceKm: Number(r.distance_km ?? 0),
   travelTime: r.travel_time ?? "",
+  holderId: r.holder_id ?? "",
+  settled: r.settled && typeof r.settled === "object" ? r.settled : {},
 });
 
 const memberToRow = (m: Member) => ({
@@ -93,6 +99,7 @@ const txnToRow = (t: Txn) => ({
   member: t.member || null,
   split: t.split,
   spent_at: t.spentAt,
+  receipt_at: t.receiptAt || 0,
   created_at: t.createdAt,
   updated_at: t.updatedAt,
 });
@@ -107,6 +114,7 @@ const rowToTxn = (r: any): Txn => ({
   split: Array.isArray(r.split) ? r.split : [],
   // rows from before the column existed: spent when they were logged
   spentAt: Number(r.spent_at ?? r.created_at),
+  receiptAt: Number(r.receipt_at ?? 0),
   createdAt: Number(r.created_at),
   updatedAt: Number(r.updated_at),
 });
@@ -201,8 +209,9 @@ export async function loadTripData(
    which checks the edit-lock session token first.
    ============================================================ */
 
-/** Ops in the shape `terra_apply` expects (snake_case rows). */
-function wire(op: outbox.Op) {
+/** Ops in the shape `terra_apply` expects (snake_case rows). Photos
+ *  are read from the device at this point — null if one is gone. */
+async function wire(op: outbox.Op): Promise<object | null> {
   switch (op.t) {
     case "trip.put":
       return { t: op.t, v: tripToRow(op.v) };
@@ -214,8 +223,16 @@ function wire(op: outbox.Op) {
       return { t: op.t, v: auditToRow(op.v) };
     case "place.put":
       return { t: op.t, v: placeToRow(op.v) };
-    case "cover.put":
-      return { t: op.t, v: { id: op.v.id, photo: op.v.photo, updated_at: op.v.updatedAt } };
+    case "cover.put": {
+      const photo = op.v.photo ?? (await getPhoto("covers", op.v.id));
+      return photo ? { t: op.t, v: { id: op.v.id, photo, updated_at: op.v.updatedAt } } : null;
+    }
+    case "receipt.put": {
+      const photo = await getPhoto("receipts", receiptKey(op.v.id, op.v.updatedAt));
+      return photo
+        ? { t: op.t, v: { id: op.v.id, trip_id: op.v.tripId, photo, updated_at: op.v.updatedAt } }
+        : null;
+    }
     default:
       return { t: op.t, id: op.id };
   }
@@ -245,21 +262,41 @@ export async function flush(): Promise<FlushStatus> {
   if (!outbox.count()) return "ok";
   if (typeof navigator !== "undefined" && navigator.onLine === false)
     return "retrying";
-  const token = editLock.getToken();
-  if (!token) return "locked";
 
   flushing = true;
   try {
     // eslint-disable-next-line no-constant-condition
     while (true) {
-      const batch = outbox.list().slice(0, BATCH);
-      if (!batch.length) return "ok";
+      const queued = outbox.list();
+      if (!queued.length) return "ok";
+
+      // one token per request: the longest run of ops the same key may
+      // write (the organiser key covers everything; a tour key, one tour)
+      const token = editLock.tokenFor(outbox.opScope(queued[0].op));
+      if (!token) return "locked";
+      const run: outbox.Entry[] = [];
+      for (const e of queued) {
+        if (run.length >= BATCH || editLock.tokenFor(outbox.opScope(e.op)) !== token) break;
+        run.push(e);
+      }
+
+      // photos gone from the device (storage cleared) can't be uploaded —
+      // drop those ops rather than wedge the queue
+      const batch: { e: outbox.Entry; w: object }[] = [];
+      const gone: string[] = [];
+      for (const e of run) {
+        const w = await wire(e.op);
+        if (w) batch.push({ e, w });
+        else gone.push(e.id);
+      }
+      if (gone.length) outbox.removeMany(gone);
+      if (!batch.length) continue;
 
       let res: any = null;
       try {
         const { data, error } = await sb.rpc("terra_apply", {
           p_token: token,
-          p_ops: batch.map((e) => wire(e.op)),
+          p_ops: batch.map((b) => b.w),
         });
         if (error) return editLock.isMissingFn(error) ? "not-installed" : "retrying";
         res = data;
@@ -268,17 +305,17 @@ export async function flush(): Promise<FlushStatus> {
       }
 
       const applied = Math.max(0, Number(res?.applied ?? 0));
-      outbox.removeMany(batch.slice(0, applied).map((e) => e.id));
+      outbox.removeMany(batch.slice(0, applied).map((b) => b.e.id));
       if (res?.ok) continue;
 
       if (res?.auth === false) {
-        editLock.reject();
+        editLock.reject(token);
         return "locked";
       }
 
       // the database itself refused this op — count it, and park it for
       // good after MAX_TRIES so one bad row can't wedge the queue
-      const bad = batch[applied];
+      const bad = batch[applied]?.e;
       if (!bad) return "retrying";
       const tries = bad.tries + 1;
       if (tries >= outbox.MAX_TRIES) {
@@ -319,8 +356,11 @@ export const db = {
   /** Used when a new trip copies places from an old one. */
   insertPlace: (p: Place) => queue({ t: "place.put", v: p }),
 
-  saveCover: (c: Cover) => queue({ t: "cover.put", v: c }),
+  saveCover: (c: PhotoRef) => queue({ t: "cover.put", v: c }),
   deleteCover: (tripId: string) => queue({ t: "cover.del", id: tripId, tripId }),
+  saveReceipt: (r: PhotoRef) => queue({ t: "receipt.put", v: r }),
+  deleteReceipt: (txnId: string, tripId: string) =>
+    queue({ t: "receipt.del", id: txnId, tripId }),
 
   /** Erase one trip and everything under it (the server purges the
    *  children). Queued like any write, so it survives going offline;
@@ -336,12 +376,13 @@ export const db = {
   async clearAll(): Promise<boolean> {
     const sb = createClient();
     if (!sb) return true;
+    const token = editLock.organiserToken();
     const { data, error } = await sb.rpc("terra_apply", {
-      p_token: editLock.getToken(),
+      p_token: token,
       p_ops: [{ t: "all.clear" }],
     });
     if (error || !data?.ok) {
-      if (data?.auth === false) editLock.reject();
+      if (data?.auth === false) editLock.reject(token);
       return false;
     }
     outbox.clear();
@@ -376,6 +417,14 @@ export async function loadCoverIndex(): Promise<
   const index: Record<string, number> = {};
   (data ?? []).forEach((r: any) => (index[r.id] = Number(r.updated_at ?? 0)));
   return { ok: true, index };
+}
+
+export async function loadReceipt(txnId: string): Promise<string | null> {
+  const sb = createClient();
+  if (!sb) return null;
+  const { data, error } = await sb.from("receipts").select("photo").eq("id", txnId);
+  if (error || !data?.length) return null;
+  return String((data[0] as any).photo ?? "") || null;
 }
 
 export async function loadCover(tripId: string): Promise<string | null> {
@@ -426,6 +475,10 @@ const placeToRow = (p: Place) => ({
   icon: p.icon,
   done: p.done,
   ord: p.ord,
+  day: p.day || 0,
+  start_time: p.time || "",
+  lat: p.lat ?? null,
+  lng: p.lng ?? null,
 });
 const rowToPlace = (r: any): Place => ({
   id: r.id,
@@ -435,6 +488,10 @@ const rowToPlace = (r: any): Place => ({
   icon: r.icon ?? "pin",
   done: !!r.done,
   ord: Number(r.ord ?? 0),
+  day: Number(r.day ?? 0),
+  time: r.start_time ?? "",
+  lat: r.lat == null ? null : Number(r.lat),
+  lng: r.lng == null ? null : Number(r.lng),
 });
 
 export async function loadPlaces(

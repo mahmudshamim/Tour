@@ -3,7 +3,7 @@
  * a 5 MB camera shot becomes ~100–300 KB, so it uploads on a weak signal
  * and fits in the offline queue. Keeps the camera's orientation.
  */
-export async function shrinkPhoto(file: File): Promise<string> {
+export async function shrinkPhoto(file: File, maxSide = 1100): Promise<string> {
   let src: ImageBitmap | HTMLImageElement;
   let revoke = "";
   try {
@@ -17,9 +17,9 @@ export async function shrinkPhoto(file: File): Promise<string> {
   }
   try {
     for (const [max, quality] of [
-      [1100, 0.74],
-      [900, 0.66],
-      [720, 0.58],
+      [maxSide, 0.74],
+      [Math.round(maxSide * 0.82), 0.66],
+      [Math.round(maxSide * 0.66), 0.58],
     ]) {
       const scale = Math.min(1, max / Math.max(src.width, src.height));
       const w = Math.max(1, Math.round(src.width * scale));

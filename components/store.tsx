@@ -50,6 +50,7 @@ import {
 import * as outbox from "./outbox";
 import * as editLock from "./editLock";
 import { setLocalCover, syncCovers } from "./covers";
+import { saveLocalReceipt, prefetchReceipts } from "./receipts";
 
 export type { Member, Txn, AuditEntry, Balances, Trip } from "./models";
 export { computeBalances, isPoolTxn } from "./models";
@@ -236,8 +237,13 @@ type Store = {
   trip: Trip | undefined;
   /** viewing an archived trip → its numbers are frozen */
   archived: boolean;
-  /** this device holds an edit-lock session (always true when local-only) */
+  /** this device may edit the open tour (organiser, or this tour's own
+   *  password; always true when local-only) */
   canEdit: boolean;
+  /** unlocked with the organiser password: every tour, new tours, admin */
+  isOrganiser: boolean;
+  /** may this device edit that tour (organiser, or its own password) */
+  canEditTrip: (tripId: string) => boolean;
   /** nothing in this tour can change from here: locked or archived */
   readOnly: boolean;
   balances: Balances;
@@ -253,12 +259,15 @@ type Store = {
     patch: { name?: string; contribution?: number; color?: string }
   ) => void;
   removeMember: (id: string) => void;
-  addTxn: (data: TxnDraft) => void;
-  updateTxn: (id: string, data: TxnDraft) => void;
+  /** `receipt`: a shrunk photo to attach · null removes it (edit) */
+  addTxn: (data: TxnDraft, receipt?: string | null) => void;
+  updateTxn: (id: string, data: TxnDraft, receipt?: string | null) => void;
   deleteTxn: (id: string) => void;
   /* trips */
   createTrip: (draft: TripDraft, opts?: CreateTripOpts) => string;
   updateTrip: (tripId: string, patch: Partial<TripDraft>) => void;
+  /** settle-up bookkeeping on the open tour (works on archived tours) */
+  updateSettle: (patch: { holderId?: string; settled?: Record<string, boolean> }) => void;
   switchTrip: (tripId: string) => void;
   archiveTrip: (tripId: string) => void;
   restoreTrip: (tripId: string) => void;
@@ -268,9 +277,12 @@ type Store = {
   setCover: (tripId: string, photo: string | null) => void;
   clearAll: () => Promise<boolean>;
   /* edit lock */
+  /** organiser password, or the open tour's own co-organiser password */
   unlock: (password: string) => Promise<LockResult>;
   lock: (everywhere?: boolean) => Promise<void>;
   changePassword: (oldPw: string, newPw: string) => Promise<LockResult>;
+  setTripPassword: typeof editLock.setTripPassword;
+  tripLocks: typeof editLock.tripLocks;
 };
 
 const StoreCtx = createContext<Store | null>(null);
@@ -286,11 +298,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [selves, setSelves] = useState<Record<string, string>>({});
   const [cacheTick, setCacheTick] = useState(0);
 
-  const canEdit = useSyncExternalStore(
-    editLock.subscribe,
-    editLock.canEdit,
-    () => false
-  );
+  // re-render whenever this device's keys change; rights are then read
+  // for whichever tour is open
+  useSyncExternalStore(editLock.subscribe, editLock.snapshot, () => "");
+  const canEdit = state.tripId
+    ? editLock.canEditTrip(state.tripId)
+    : editLock.isOrganiser();
+  const isOrganiser = editLock.isOrganiser();
 
   // keep a ref to latest state for diffing inside async wrappers
   const stateRef = useRef(state);
@@ -342,7 +356,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
 
     // a remembered edit session may have been revoked since last visit
-    if (editLock.getToken()) editLock.verify();
+    editLock.verify();
 
     // Push queued writes, then pull the latest. Flush and refetch are
     // deliberately serialised in one pass — running them concurrently
@@ -379,6 +393,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           trips.map((t) => t.id),
           outbox.pendingCovers()
         );
+        // the open tour's receipts, so they can be looked at with no signal
+        await prefetchReceipts(stateRef.current.txns);
       } finally {
         prefetching = false;
       }
@@ -566,12 +582,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   /** Locked devices and archived trips can't change anything. The
    *  database enforces the lock too — this just keeps the UI honest. */
   const guard = () =>
-    editLock.canEdit() &&
+    editLock.canEditTrip(stateRef.current.tripId) &&
     !archivedRef.current &&
     Boolean(stateRef.current.tripId);
 
-  /** For trip-level actions, which also work on archived trips. */
-  const editor = () => editLock.canEdit();
+  /** Trip-level actions (also allowed on archived tours). */
+  const editor = (tripId: string) => editLock.canEditTrip(tripId);
+  /** Creating, deleting, erasing — the organiser only. */
+  const organiser = () => editLock.isOrganiser();
 
   const actor = () => {
     const s = stateRef.current;
@@ -633,18 +651,24 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if (selfRef.current === id) setSelf("");
   }, []);
 
-  const addTxn = useCallback((data: TxnDraft) => {
+  const addTxn = useCallback((data: TxnDraft, receipt?: string | null) => {
     if (!guard()) return;
     const now = Date.now();
     const s = stateRef.current;
     const txn: Txn = {
       ...data,
       spentAt: data.spentAt || now,
+      receiptAt: receipt ? now : 0,
       id: uid(),
       tripId: s.tripId,
       createdAt: now,
       updatedAt: now,
     };
+    // photo first, so the row never points at a receipt that isn't up yet
+    if (receipt) {
+      saveLocalReceipt(txn.id, now, receipt);
+      db.saveReceipt({ id: txn.id, tripId: s.tripId, updatedAt: now });
+    }
     const entry: AuditEntry = {
       id: uid(),
       tripId: s.tripId,
@@ -661,14 +685,24 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     db.insertAudit(entry);
   }, []);
 
-  const updateTxn = useCallback((id: string, data: TxnDraft) => {
+  const updateTxn = useCallback((id: string, data: TxnDraft, receipt?: string | null) => {
     if (!guard()) return;
     const s = stateRef.current;
     const old = s.txns.find((t) => t.id === id);
     if (!old) return;
     const now = Date.now();
-    const changes = diff(old, data);
-    const txn: Txn = { ...old, ...data, updatedAt: now };
+    let receiptAt = old.receiptAt || 0;
+    if (typeof receipt === "string") {
+      receiptAt = now;
+      saveLocalReceipt(id, now, receipt);
+      db.saveReceipt({ id, tripId: s.tripId, updatedAt: now });
+    } else if (receipt === null && receiptAt) {
+      receiptAt = 0;
+      db.deleteReceipt(id, s.tripId);
+    }
+    const draft: TxnDraft = { ...data, receiptAt };
+    const changes = diff(old, draft);
+    const txn: Txn = { ...old, ...draft, updatedAt: now };
     const entry: AuditEntry = {
       id: uid(),
       tripId: s.tripId,
@@ -719,7 +753,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const createTrip = useCallback(
     (draft: TripDraft, opts: CreateTripOpts = {}): string => {
-      if (!editor()) return "";
+      if (!organiser()) return "";
       const s = stateRef.current;
       const now = Date.now();
       const { name, currency, ...details } = draft;
@@ -769,7 +803,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   /** Details only — allowed on archived tours too, since it can't touch
    *  their numbers (an old tour can still get its cover and dates). */
   const updateTrip = useCallback((tripId: string, patch: Partial<TripDraft>) => {
-    if (!editor()) return;
+    if (!editor(tripId)) return;
     const s = stateRef.current;
     const old = s.trips.find((t) => t.id === tripId);
     if (!old) return;
@@ -783,6 +817,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     dispatch({ type: "setTrips", trips: s.trips.map((t) => (t.id === tripId ? next : t)) });
     db.saveTrip(next);
   }, []);
+
+  const updateSettle = useCallback(
+    (patch: { holderId?: string; settled?: Record<string, boolean> }) => {
+      const s = stateRef.current;
+      if (!editor(s.tripId)) return;
+      const old = s.trips.find((t) => t.id === s.tripId);
+      if (!old) return;
+      const next: Trip = { ...old, ...patch };
+      dispatch({ type: "setTrips", trips: s.trips.map((t) => (t.id === old.id ? next : t)) });
+      db.saveTrip(next);
+    },
+    []
+  );
 
   const switchTrip = useCallback((tripId: string) => {
     const s = stateRef.current;
@@ -800,7 +847,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const setStatus = (tripId: string, status: Trip["status"]) => {
-    if (!editor()) return;
+    if (!editor(tripId)) return;
     const s = stateRef.current;
     const trip = s.trips.find((t) => t.id === tripId);
     if (!trip) return;
@@ -824,7 +871,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   );
 
   const deleteTrip = useCallback((tripId: string) => {
-    if (!editor()) return;
+    if (!organiser()) return;
     const s = stateRef.current;
     const trips = s.trips.filter((t) => t.id !== tripId);
     try {
@@ -850,16 +897,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   /** Shown here at once; uploaded with the rest of the queue. */
   const setCover = useCallback((tripId: string, photo: string | null) => {
-    if (!editor()) return;
+    if (!editor(tripId)) return;
     const now = Date.now();
-    setLocalCover(tripId, photo, now);
-    if (photo) db.saveCover({ id: tripId, tripId, photo, updatedAt: now });
-    else db.deleteCover(tripId);
+    // the queue keeps a reference; the photo itself waits on the device
+    setLocalCover(tripId, photo, now).then(() => {
+      if (photo) db.saveCover({ id: tripId, tripId, updatedAt: now });
+      else db.deleteCover(tripId);
+    });
   }, []);
 
   /** A throwaway tour to show the app off. Adds; never wipes anything. */
   const createDemoTrip = useCallback(() => {
-    if (!editor()) return;
+    if (!organiser()) return;
     const s = stateRef.current;
     const now = Date.now();
     const day = (n: number) =>
@@ -899,6 +948,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       amount,
       category,
       spentAt: now - n * 3600_000,
+      receiptAt: 0,
       createdAt: now - n * 3600_000,
       updatedAt: now - n * 3600_000,
     });
@@ -930,6 +980,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       icon,
       done: i === 0,
       ord: i,
+      day: i < 2 ? 1 : 2,
+      time: ["06:00", "10:30", "09:00", "19:00"][i],
+      lat: null,
+      lng: null,
     }));
 
     db.saveTrip(trip);
@@ -943,7 +997,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const clearAll = useCallback(async () => {
-    if (!editor()) return false;
+    if (!organiser()) return false;
     const ok = await db.clearAll();
     if (!ok) return false;
     try {
@@ -974,6 +1028,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     trip,
     archived,
     canEdit,
+    isOrganiser,
+    canEditTrip: editLock.canEditTrip,
     readOnly: !canEdit || archived,
     balances,
     totalSpent,
@@ -989,6 +1045,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     deleteTxn,
     createTrip,
     updateTrip,
+    updateSettle,
     switchTrip,
     archiveTrip,
     restoreTrip,
@@ -996,9 +1053,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     createDemoTrip,
     setCover,
     clearAll,
-    unlock: editLock.unlock,
+    unlock: (password: string) => editLock.unlock(password, stateRef.current.tripId),
     lock: editLock.lock,
     changePassword: editLock.changePassword,
+    setTripPassword: editLock.setTripPassword,
+    tripLocks: editLock.tripLocks,
   };
 
   return <StoreCtx.Provider value={value}>{children}</StoreCtx.Provider>;

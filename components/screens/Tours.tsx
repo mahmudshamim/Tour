@@ -57,7 +57,8 @@ function liveOrder(a: Trip, b: Trip): number {
 const pastKey = (t: Trip) => t.startDate || new Date(t.createdAt).toISOString();
 
 export default function Tours() {
-  const { state, canEdit, configured, cacheTick, switchTrip } = useStore();
+  const { state, isOrganiser, canEditTrip, configured, cacheTick, switchTrip } = useStore();
+  const canEdit = isOrganiser;
   const { places } = usePlaces();
   const { setTab, openTrip, openUnlock, toast } = useUI();
 
@@ -140,7 +141,7 @@ export default function Tours() {
     <div className="screen fade-in">
       <AppHeader title="TerraExplore" tourScoped={false} />
 
-      {configured && !canEdit && (
+      {configured && !isOrganiser && !canEditTrip(state.tripId) && (
         <button className="view-note" onClick={() => openUnlock()}>
           <Eye size={16} />
           <span>
@@ -209,7 +210,7 @@ export default function Tours() {
           trip={hero}
           stats={statsOf(hero.id)}
           viewing={hero.id === state.tripId}
-          canEdit={canEdit}
+          canEdit={canEditTrip(hero.id)}
           onOpen={() => open(hero)}
           onShare={() => share(hero)}
           onEdit={() => openTrip(hero.id)}

@@ -19,6 +19,10 @@ export type Trip = {
   selfId: string;
   createdAt: number;
   archivedAt?: number;
+  /** settle-up: the member holding the pool's cash ("" = not said) */
+  holderId: string;
+  /** settle-up: members already squared up { memberId: true } */
+  settled: Record<string, boolean>;
 } & TripDetails;
 
 /** Everything that makes one tour look and feel like itself. */
@@ -69,6 +73,8 @@ export const withDetails = (t: Trip): Trip => {
     ...t,
     cover: t.cover || guess?.cover || DEFAULT_DETAILS.cover,
     accent: t.accent || guess?.accent || DEFAULT_DETAILS.accent,
+    holderId: t.holderId ?? "",
+    settled: t.settled ?? {},
   };
 };
 
@@ -152,6 +158,8 @@ export type Txn = {
   /** when the money was actually spent — editable, so an expense logged
    *  later (e.g. after a day with no signal) still lands on the right day */
   spentAt: number;
+  /** version of its receipt photo (0 = none); the photo lives apart */
+  receiptAt: number;
   createdAt: number; // when it was logged
   updatedAt: number;
 };
@@ -214,13 +222,17 @@ export type State = {
   audit: AuditEntry[];
 };
 
-/** A tour's own photo — `id` is the trip's id (one photo per tour). */
-export type Cover = {
-  id: string;
-  tripId: string; // same as id; lets the outbox treat it like any trip row
-  photo: string; // data:image/jpeg;base64,… (shrunk on the phone)
+/** A photo waiting to upload. The outbox keeps only this reference;
+ *  the bytes stay in photoStore until the upload reads them. */
+export type PhotoRef = {
+  id: string; // cover: the trip's id · receipt: the expense's id
+  tripId: string;
   updatedAt: number;
+  photo?: string; // only in queue entries written before photos moved out
 };
+
+/** Receipt photos are stored per version, so a replaced one is a new key. */
+export const receiptKey = (txnId: string, at: number) => `${txnId}@${at}`;
 
 /** Local cache of one tour's places (shared by the store and places.tsx). */
 export const placesCacheKey = (tripId: string) => `terra.places.${tripId}.v1`;
@@ -233,7 +245,47 @@ export type Place = {
   icon: string;
   done: boolean;
   ord: number; // sort order (for reordering)
+  day: number; // 1 = the tour's first day; 0 = not on a day yet
+  time: string; // "HH:MM" or ""
+  lat: number | null;
+  lng: number | null;
 };
+
+/** Day-by-day: day 1, 2, … then unscheduled; within a day by time
+ *  (untimed last), then the hand-set order. */
+export function planOrder(a: Place, b: Place): number {
+  const da = a.day || 1e6;
+  const db = b.day || 1e6;
+  if (da !== db) return da - db;
+  const ta = a.time || "99:99";
+  const tb = b.time || "99:99";
+  if (ta !== tb) return ta < tb ? -1 : 1;
+  return a.ord - b.ord;
+}
+
+/** "08:30" → "8:30 AM" */
+export function fmtClock(hhmm: string): string {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(hhmm || "");
+  if (!m) return "";
+  const h = +m[1];
+  return `${h % 12 || 12}:${m[2]} ${h < 12 ? "AM" : "PM"}`;
+}
+
+/** How many days the plan offers: the tour's length, or enough to cover
+ *  what's already planned, plus one spare. */
+export function planDays(t: Pick<TripDetails, "startDate" | "endDate"> | undefined, places: Place[]): number {
+  const used = places.reduce((m, p) => Math.max(m, p.day || 0), 0);
+  const s = t ? dayStart(t.startDate) : NaN;
+  const e = t ? dayStart(t.endDate) : NaN;
+  const span = Number.isNaN(s) ? 0 : Number.isNaN(e) || e < s ? 1 : Math.round((e - s) / DAY) + 1;
+  return Math.max(span, used + 1, 1);
+}
+
+/** Calendar date of plan day `n` (1-based), if the tour has dates. */
+export function planDayDate(t: Pick<TripDetails, "startDate"> | undefined, n: number): number | null {
+  const s = t ? dayStart(t.startDate) : NaN;
+  return Number.isNaN(s) || n < 1 ? null : s + (n - 1) * DAY;
+}
 
 export const EMPTY: State = {
   trips: [],
@@ -257,6 +309,8 @@ export function newTrip(
     budget: 0,
     currency: "৳",
     selfId: "",
+    holderId: "",
+    settled: {},
     createdAt: at,
   };
 }
@@ -437,6 +491,43 @@ export function computeBalances(members: Member[], txns: Txn[]): Balances {
   return { balance, spent, own, pool, ownTotal };
 }
 
+/* ---- settle-up ---- */
+
+export type SettleLine = { from: string; to: string; amount: number }; // member ids; "" = the pool
+export type Settlement = {
+  left: number; // cash still in the pool
+  back: { id: string; amount: number }[]; // gets money back
+  owes: { id: string; amount: number }[]; // must pay in
+  lines: SettleLine[]; // who hands whom what
+};
+
+/**
+ * End-of-tour squaring up. Everyone's balance is deposit minus their
+ * share of pool spending; the pool's leftover cash is the sum of them.
+ * With a cash holder, everyone settles with that person; without one,
+ * with "the pool".
+ */
+export function settleUp(members: Member[], b: Balances, holderId = ""): Settlement {
+  const round = (n: number) => Math.round(n * 100) / 100;
+  const holder = members.some((m) => m.id === holderId) ? holderId : "";
+  const back: Settlement["back"] = [];
+  const owes: Settlement["owes"] = [];
+  let left = 0;
+  members.forEach((m) => {
+    const bal = round(b.balance[m.id] ?? 0);
+    left += bal;
+    if (bal > 0.004) back.push({ id: m.id, amount: bal });
+    else if (bal < -0.004) owes.push({ id: m.id, amount: -bal });
+  });
+  back.sort((x, y) => y.amount - x.amount);
+  owes.sort((x, y) => y.amount - x.amount);
+  const lines: SettleLine[] = [
+    ...owes.filter((o) => o.id !== holder).map((o) => ({ from: o.id, to: holder, amount: o.amount })),
+    ...back.filter((r) => r.id !== holder).map((r) => ({ from: holder, to: r.id, amount: r.amount })),
+  ];
+  return { left: round(left), back, owes, lines };
+}
+
 /** Newest spend first — by when it happened, not when it was typed in. */
 export const byWhen = (a: Txn, b: Txn): number =>
   (b.spentAt || b.createdAt) - (a.spentAt || a.createdAt);
@@ -471,6 +562,8 @@ export function diff(a: Txn, b: TxnDraft): Change[] {
     out.push({ field: "kind", from: a.kind, to: b.kind });
   if (a.member !== b.member)
     out.push({ field: "member", from: a.member || "—", to: b.member || "—" });
+  if (Boolean(a.receiptAt) !== Boolean(b.receiptAt))
+    out.push({ field: "receipt", from: a.receiptAt ? "photo" : "none", to: b.receiptAt ? "photo" : "removed" });
   const was = a.spentAt || a.createdAt;
   if (was !== b.spentAt)
     out.push({ field: "when", from: fmtStamp(was), to: fmtStamp(b.spentAt) });

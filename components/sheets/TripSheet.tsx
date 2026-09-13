@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type CSSProperties } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import {
   Check,
   Luggage,
@@ -15,6 +15,7 @@ import {
   Trash2,
   Lock,
   ImagePlus,
+  KeyRound,
 } from "lucide-react";
 import { useStore, cachedTripStats, tripStatsOf } from "../store";
 import { usePlaces } from "../places";
@@ -22,6 +23,75 @@ import { useUI } from "../ui";
 import CoverArt, { CoverPhoto } from "../CoverArt";
 import { useCover, stockPhoto } from "../covers";
 import { shrinkPhoto } from "../photo";
+import { lockMessage } from "../editLock";
+
+/** Organiser only: a password that edits just this one tour. */
+function CoOrganiser({ tripId }: { tripId: string }) {
+  const { setTripPassword, tripLocks } = useStore();
+  const { toast } = useUI();
+  const [has, setHas] = useState<boolean | null>(null);
+  const [pw, setPw] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    let alive = true;
+    tripLocks().then((list) => alive && setHas(list ? list.includes(tripId) : null));
+    return () => {
+      alive = false;
+    };
+  }, [tripId, tripLocks]);
+
+  const apply = async (value: string) => {
+    setBusy(true);
+    setErr("");
+    const res = await setTripPassword(tripId, value);
+    setBusy(false);
+    if (!res.ok) return setErr(lockMessage(res.error));
+    setHas(res.locked);
+    setPw("");
+    toast(res.locked ? "Tour password set — share it with your co-organiser" : "Tour password removed");
+  };
+
+  return (
+    <div className="coorg">
+      <div className="split-title">Co-organiser password</div>
+      <p className="field-hint">
+        {has
+          ? "This tour has its own password: whoever has it can edit this tour — and nothing else. Changing it signs them out."
+          : "Let a friend run this tour: they unlock with this password while viewing it, and can edit only this tour."}
+      </p>
+      <div className="add-member">
+        <div className="input compact flex1">
+          <KeyRound size={16} />
+          <input
+            placeholder={has ? "New tour password" : "Tour password (6+ characters)"}
+            value={pw}
+            autoComplete="off"
+            onChange={(e) => {
+              setErr("");
+              setPw(e.target.value);
+            }}
+          />
+        </div>
+        <button
+          type="button"
+          className="loc-btn"
+          disabled={busy || pw.length < 6}
+          onClick={() => apply(pw)}
+        >
+          {busy ? "…" : has ? "Change" : "Set"}
+        </button>
+      </div>
+      {has && (
+        <button type="button" className="link danger-link" onClick={() => apply("")} disabled={busy}>
+          Remove tour password
+        </button>
+      )}
+      {err && <div className="field-err">{err}</div>}
+    </div>
+  );
+}
 import {
   ACCENTS,
   COVERS,
@@ -54,7 +124,9 @@ export default function TripSheet({ tripId }: { tripId?: string }) {
   const {
     state,
     trip: current,
-    canEdit,
+    configured,
+    isOrganiser,
+    canEditTrip,
     createTrip,
     updateTrip,
     archiveTrip,
@@ -135,14 +207,20 @@ export default function TripSheet({ tripId }: { tripId?: string }) {
   const valid = Boolean(d.name.trim()) && !dateErr;
   const dates = fmtDateRange(d.startDate, d.endDate);
 
-  if (!canEdit) {
+  // a new tour needs the organiser; editing one, that tour's rights
+  const allowed = editing ? canEditTrip(editing.id) : isOrganiser;
+  if (!allowed) {
     return (
       <div className="sheet-overlay" onClick={close}>
         <div className="sheet" onClick={(e) => e.stopPropagation()}>
           <div className="sheet-grip" />
           <div className="empty">
             <Lock size={28} />
-            <p>Creating or changing tours needs the edit password.</p>
+            <p>
+              {editing
+                ? "Changing this tour needs the organiser password or its own tour password."
+                : "Only the organiser can start a new tour — unlock with the organiser password."}
+            </p>
             <button className="btn-primary" onClick={() => openUnlock()}>
               Unlock editing
             </button>
@@ -484,6 +562,8 @@ export default function TripSheet({ tripId }: { tripId?: string }) {
           {editing ? "Save changes" : "Create tour"}
         </button>
 
+        {editing && configured && isOrganiser && <CoOrganiser tripId={editing.id} />}
+
         {editing && (
           <div className="danger-zone">
             {editing.status === "archived" ? (
@@ -502,9 +582,11 @@ export default function TripSheet({ tripId }: { tripId?: string }) {
                 <Archive size={17} /> Archive — move to Past tours
               </button>
             )}
-            <button className="row-btn danger" onClick={doDelete}>
-              <Trash2 size={17} /> Delete tour
-            </button>
+            {isOrganiser && (
+              <button className="row-btn danger" onClick={doDelete}>
+                <Trash2 size={17} /> Delete tour
+              </button>
+            )}
           </div>
         )}
       </div>

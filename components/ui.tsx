@@ -20,7 +20,11 @@ type Sheet =
   | { kind: "transactions" }
   | { kind: "log" }
   /** create a tour, or edit one when `tripId` is set */
-  | { kind: "trip"; tripId?: string };
+  | { kind: "trip"; tripId?: string }
+  | { kind: "settle" }
+  | { kind: "report" }
+  /** pin a plan stop on the map */
+  | { kind: "placeLoc"; placeId: string };
 
 export type ConfirmOpts = {
   title: string;
@@ -44,6 +48,9 @@ type UI = {
   openTransactions: () => void;
   openLog: () => void;
   openTrip: (tripId?: string) => void;
+  openSettle: () => void;
+  openReport: () => void;
+  openPlaceLoc: (placeId: string) => void;
   close: () => void;
   /** password prompt — sits above any sheet */
   unlockOpen: boolean;
@@ -116,6 +123,9 @@ export function UIProvider({ children }: { children: ReactNode }) {
     openTransactions: () => setSheet({ kind: "transactions" }),
     openLog: () => setSheet({ kind: "log" }),
     openTrip: (tripId) => setSheet({ kind: "trip", tripId }),
+    openSettle: () => setSheet({ kind: "settle" }),
+    openReport: () => setSheet({ kind: "report" }),
+    openPlaceLoc: (placeId) => setSheet({ kind: "placeLoc", placeId }),
     close,
     unlockOpen,
     openUnlock: (then) => {

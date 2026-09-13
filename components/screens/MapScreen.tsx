@@ -1,13 +1,14 @@
 "use client";
 
-import { useEffect, useRef } from "react";
-import { Share2, Car, Check, MapPin } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Share2, Car, Check, MapPin, Navigation, Route, Map as MapIcon } from "lucide-react";
 import AppHeader from "../AppHeader";
 import RouteMap from "../RouteMap";
-import { usePlaces, ICONS } from "../places";
+import LiveMap from "./LiveMap";
+import { usePlaces, ICONS, mapsUrl } from "../places";
 import { useStore } from "../store";
 import { shareTripCard } from "../tripCard";
-import { accentOf, fmtDateRange } from "../models";
+import { accentOf, fmtClock, fmtDateRange, planOrder } from "../models";
 
 /** Where the next few stops float along the drawn route. */
 const SPOTS = [
@@ -24,8 +25,13 @@ export default function MapScreen() {
   const { places } = usePlaces();
   const { trip } = useStore();
   const done = places.filter((p) => p.done).length;
-  const upcoming = places.filter((p) => !p.done).slice(0, 3);
+  const ordered = useMemo(() => [...places].sort(planOrder), [places]);
+  const upcoming = ordered.filter((p) => !p.done).slice(0, 3);
   const destination = trip?.destination || trip?.name || "";
+
+  // the real map is the useful one; the drawn route is the pretty one
+  // (and the one that needs nothing at all offline)
+  const [view, setView] = useState<"route" | "real">("real");
 
   const shareTrip = () => {
     if (!trip) return;
@@ -80,12 +86,25 @@ export default function MapScreen() {
       stage.removeEventListener("pointermove", onMove);
       stage.removeEventListener("pointerleave", onLeave);
     };
-  }, []);
+  }, [view]);
 
   return (
     <div className="screen fade-in">
       <AppHeader title="Explorer" />
 
+      <div className="map-tabs" role="tablist">
+        <button className={view === "real" ? "on" : ""} onClick={() => setView("real")} role="tab">
+          <MapIcon size={15} /> Map
+        </button>
+        <button className={view === "route" ? "on" : ""} onClick={() => setView("route")} role="tab">
+          <Route size={15} /> Route
+        </button>
+      </div>
+
+      {view === "real" ? (
+        <LiveMap />
+      ) : (
+      <>
       <div className="map-stage" ref={stageRef}>
         <div className="map-3d" ref={d3Ref}>
           <RouteMap className="map-base layer" />
@@ -206,15 +225,31 @@ export default function MapScreen() {
                   <div className="stop-info">
                     <div className="name">{p.name}</div>
                     <div className="meta">
-                      <MapPin size={13} /> {p.area}
+                      {p.day > 0 && <b className="stop-when">Day {p.day}{p.time ? ` · ${fmtClock(p.time)}` : ""}</b>}
+                      {(p.area || destination) && (
+                        <>
+                          <MapPin size={13} /> {p.area || destination}
+                        </>
+                      )}
                     </div>
                   </div>
+                  <a
+                    className="stop-go"
+                    href={mapsUrl(p, trip?.destination ?? "")}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label={`Directions to ${p.name}`}
+                  >
+                    <Navigation size={17} />
+                  </a>
                 </div>
               </div>
             );
           })
         )}
       </div>
+      </>
+      )}
     </div>
   );
 }

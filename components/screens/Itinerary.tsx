@@ -10,18 +10,68 @@ import {
   Pencil,
   ChevronUp,
   ChevronDown,
+  Navigation,
+  Clock,
+  CalendarDays,
+  MapPinned,
 } from "lucide-react";
 import AppHeader from "../AppHeader";
-import { usePlaces, ICONS, PICKER, type Place } from "../places";
+import { usePlaces, ICONS, PICKER, swapTarget, mapsUrl, type Place } from "../places";
 import { useStore } from "../store";
 import { useUI } from "../ui";
+import { fmtClock, planDayDate, planDays, planOrder, type Trip } from "../models";
+
+const dayName = (trip: Trip | undefined, n: number) => {
+  const at = planDayDate(trip, n);
+  return at
+    ? new Date(at).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })
+    : "";
+};
+
+function DayPicker({
+  value,
+  days,
+  trip,
+  onChange,
+}: {
+  value: number;
+  days: number;
+  trip: Trip | undefined;
+  onChange: (d: number) => void;
+}) {
+  return (
+    <label className="day-pick">
+      <CalendarDays size={14} />
+      <select value={value} onChange={(e) => onChange(Number(e.target.value))} aria-label="Day">
+        <option value={0}>No day</option>
+        {Array.from({ length: days }, (_, i) => i + 1).map((d) => (
+          <option key={d} value={d}>
+            Day {d}
+            {dayName(trip, d) ? ` · ${dayName(trip, d)}` : ""}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function TimePicker({ value, onChange }: { value: string; onChange: (t: string) => void }) {
+  return (
+    <label className="time-pick">
+      <Clock size={14} />
+      <input type="time" value={value} onChange={(e) => onChange(e.target.value)} aria-label="Time" />
+    </label>
+  );
+}
 
 export default function Itinerary() {
   const { places, toggle, add, update, move, remove, resetDone } = usePlaces();
   const { trip, readOnly } = useStore();
-  const { confirm } = useUI();
+  const { confirm, openPlaceLoc } = useUI();
   const [newName, setNewName] = useState("");
   const [newIcon, setNewIcon] = useState("pin");
+  const [newDay, setNewDay] = useState(0);
+  const [newTime, setNewTime] = useState("");
   const [editMode, setEditMode] = useState(false);
 
   // locked (or archived) mid-edit → drop back to the read-only list
@@ -41,14 +91,50 @@ export default function Itinerary() {
 
   const submit = () => {
     if (!newName.trim()) return;
-    add(newName, newIcon);
+    add(newName, newIcon, newDay, newTime);
     setNewName("");
     setNewIcon("pin");
+    setNewTime("");
   };
 
   const done = places.filter((p) => p.done).length;
   const total = places.length || 1;
   const pct = Math.round((done / total) * 100);
+
+  const days = planDays(trip, places);
+  const sorted = [...places].sort(planOrder);
+  const planned = places.some((p) => p.day > 0);
+  const usedDays = new Set(places.filter((p) => p.day > 0).map((p) => p.day)).size;
+  // one block per day with stops, then the not-yet-scheduled ones
+  const groups: { day: number; items: Place[] }[] = planned
+    ? [
+        ...Array.from({ length: days }, (_, i) => i + 1).map((d) => ({
+          day: d,
+          items: sorted.filter((p) => p.day === d),
+        })),
+        { day: 0, items: sorted.filter((p) => !p.day || p.day > days) },
+      ].filter((g) => g.items.length || (editMode && g.day > 0 && g.day <= days))
+    : [{ day: -1, items: sorted }];
+
+  const row = (p: Place, i: number) => (
+    <PlaceRow
+      key={p.id}
+      place={p}
+      index={i}
+      trip={trip}
+      days={days}
+      editMode={editMode}
+      canUp={Boolean(swapTarget(places, p.id, -1))}
+      canDown={Boolean(swapTarget(places, p.id, 1))}
+      readOnly={readOnly}
+      onToggle={() => toggle(p.id)}
+      onUpdate={(patch) => update(p.id, patch)}
+      onMoveUp={() => move(p.id, -1)}
+      onMoveDown={() => move(p.id, 1)}
+      onLocate={() => openPlaceLoc(p.id)}
+      onDelete={() => confirmRemove(p.id, p.name)}
+    />
+  );
 
   return (
     <div className="screen fade-in">
@@ -60,7 +146,8 @@ export default function Itinerary() {
             <div className="section-title">{trip?.name || "Trip Plan"}</div>
             <div className="ov-sub">
               {places.length
-                ? `${places.length} place${places.length > 1 ? "s" : ""} to explore`
+                ? `${places.length} place${places.length > 1 ? "s" : ""}` +
+                  (usedDays ? ` over ${usedDays} day${usedDays > 1 ? "s" : ""}` : "")
                 : "No stops planned yet"}
             </div>
           </div>
@@ -106,23 +193,32 @@ export default function Itinerary() {
         </div>
       </div>
 
+      {!planned && places.length > 1 && !readOnly && !editMode && (
+        <div className="plan-tip">
+          <CalendarDays size={15} /> Tap <b>Edit</b> to put stops on days, with times and map pins.
+        </div>
+      )}
+
       <div style={{ paddingTop: 8 }}>
-        {places.map((p, i) => (
-          <PlaceRow
-            key={p.id}
-            place={p}
-            index={i}
-            editMode={editMode}
-            isFirst={i === 0}
-            isLast={i === places.length - 1}
-            readOnly={readOnly}
-            onToggle={() => toggle(p.id)}
-            onUpdate={(patch) => update(p.id, patch)}
-            onMoveUp={() => move(p.id, -1)}
-            onMoveDown={() => move(p.id, 1)}
-            onDelete={() => confirmRemove(p.id, p.name)}
-          />
-        ))}
+        {groups.map((g) =>
+          g.day === -1 ? (
+            g.items.map(row)
+          ) : (
+            <div className="day-group" key={g.day}>
+              <div className="day-title">
+                <span className="dt-badge">{g.day ? `Day ${g.day}` : "Anytime"}</span>
+                <span className="dt-date">{g.day ? dayName(trip, g.day) : "not on a day yet"}</span>
+                <i />
+                {g.items.length > 0 && (
+                  <span className="dt-count">
+                    {g.items.filter((p) => p.done).length}/{g.items.length}
+                  </span>
+                )}
+              </div>
+              {g.items.length ? g.items.map(row) : <div className="day-empty">Nothing on this day yet</div>}
+            </div>
+          )
+        )}
       </div>
 
       {places.length === 0 && readOnly && (
@@ -152,6 +248,10 @@ export default function Itinerary() {
             );
           })}
         </div>
+        <div className="add-when">
+          <DayPicker value={newDay} days={days} trip={trip} onChange={setNewDay} />
+          <TimePicker value={newTime} onChange={setNewTime} />
+        </div>
         <div className="add-member">
           <div className="input compact flex1">
             <MapPin size={17} />
@@ -176,31 +276,38 @@ export default function Itinerary() {
 function PlaceRow({
   place: p,
   index,
+  trip,
+  days,
   editMode,
-  isFirst,
-  isLast,
+  canUp,
+  canDown,
   readOnly,
   onToggle,
   onUpdate,
   onMoveUp,
   onMoveDown,
+  onLocate,
   onDelete,
 }: {
   place: Place;
   index: number;
+  trip: Trip | undefined;
+  days: number;
   editMode: boolean;
-  isFirst: boolean;
-  isLast: boolean;
+  canUp: boolean;
+  canDown: boolean;
   readOnly: boolean;
   onToggle: () => void;
-  onUpdate: (patch: { name?: string; area?: string }) => void;
+  onUpdate: (patch: { name?: string; area?: string; day?: number; time?: string }) => void;
   onMoveUp: () => void;
   onMoveDown: () => void;
+  onLocate: () => void;
   onDelete: () => void;
 }) {
   const Icon = ICONS[p.icon] ?? MapPin;
   const [name, setName] = useState(p.name);
   const [area, setArea] = useState(p.area);
+  const located = p.lat != null && p.lng != null;
 
   // Keep drafts in sync if the stored values change elsewhere.
   useEffect(() => setName(p.name), [p.name]);
@@ -250,11 +357,22 @@ function PlaceRow({
               aria-label="Location"
             />
           </div>
+          <div className="pf-when">
+            <DayPicker value={p.day} days={days} trip={trip} onChange={(d) => onUpdate({ day: d })} />
+            <TimePicker value={p.time} onChange={(t) => onUpdate({ time: t })} />
+            <button
+              className={`pf-loc ${located ? "on" : ""}`}
+              onClick={onLocate}
+              aria-label={located ? `Move ${p.name} on the map` : `Put ${p.name} on the map`}
+            >
+              <MapPinned size={15} />
+            </button>
+          </div>
         </div>
         <div className="place-reorder">
           <button
             className="move-btn"
-            disabled={isFirst}
+            disabled={!canUp}
             onClick={onMoveUp}
             aria-label={`Move ${p.name} up`}
           >
@@ -262,7 +380,7 @@ function PlaceRow({
           </button>
           <button
             className="move-btn"
-            disabled={isLast}
+            disabled={!canDown}
             onClick={onMoveDown}
             aria-label={`Move ${p.name} down`}
           >
@@ -292,13 +410,27 @@ function PlaceRow({
         <div className="place-info">
           <div className="place-name">{p.name}</div>
           <div className="place-area">
-            <MapPin size={12} /> {p.area}
+            {p.time && <span className="place-time">{fmtClock(p.time)}</span>}
+            {(p.area || located) && (
+              <span className="place-where">
+                <MapPin size={12} /> {p.area || "On the map"}
+              </span>
+            )}
           </div>
         </div>
         <span className={`place-check ${p.done ? "on" : ""}`}>
           {p.done && <Check size={16} strokeWidth={3} />}
         </span>
       </button>
+      <a
+        className="place-go"
+        href={mapsUrl(p, trip?.destination ?? "")}
+        target="_blank"
+        rel="noopener noreferrer"
+        aria-label={`Directions to ${p.name}`}
+      >
+        <Navigation size={16} />
+      </a>
     </div>
   );
 }

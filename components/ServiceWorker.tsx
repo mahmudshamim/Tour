@@ -19,6 +19,9 @@ export default function ServiceWorker() {
 
     const warm = async () => {
       const reg = await navigator.serviceWorker.ready;
+      // the map's code loads on demand — fetch it now, so pinning a stop
+      // by GPS still works on a trip with no signal
+      await import("leaflet").catch(() => {});
       const urls = performance
         .getEntriesByType("resource")
         .map((e) => e.name)

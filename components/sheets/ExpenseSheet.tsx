@@ -1,7 +1,17 @@
 "use client";
 
 import { useState } from "react";
-import { Check, Users, Settings2, User, Wallet, Lock, CalendarClock } from "lucide-react";
+import {
+  Check,
+  Users,
+  Settings2,
+  User,
+  Wallet,
+  Lock,
+  CalendarClock,
+  Camera,
+  Trash2,
+} from "lucide-react";
 import {
   CATEGORIES,
   txnIcon,
@@ -13,6 +23,8 @@ import {
 import { useStore, type Txn } from "../store";
 import { useUI } from "../ui";
 import type { TxnKind } from "../models";
+import { useReceipt } from "../receipts";
+import { shrinkPhoto } from "../photo";
 
 const KIND_HINT: Record<TxnKind, string> = {
   group: "Split from the shared pool.",
@@ -35,6 +47,25 @@ export default function ExpenseSheet({ editing }: { editing?: Txn }) {
     toLocalInput(editing ? editing.spentAt || editing.createdAt : Date.now())
   );
   const TitleIcon = txnIcon(title, cat);
+
+  // receipt: undefined = keep as is · string = new photo · null = remove
+  const current = useReceipt(editing);
+  const [receipt, setReceipt] = useState<string | null | undefined>(undefined);
+  const [shrinking, setShrinking] = useState(false);
+  const shownReceipt =
+    receipt === undefined ? (current && current !== "loading" ? current : null) : receipt;
+  const hasReceipt = receipt === undefined ? Boolean(editing?.receiptAt) : Boolean(receipt);
+  const pickReceipt = async (file: File | undefined) => {
+    if (!file) return;
+    setShrinking(true);
+    try {
+      setReceipt(await shrinkPhoto(file, 1000));
+    } catch {
+      /* unreadable image — leave it */
+    } finally {
+      setShrinking(false);
+    }
+  };
   const [kind, setKind] = useState<TxnKind>(editing?.kind ?? "group");
   const [split, setSplit] = useState<string[]>(
     editing?.kind === "group" && editing.split.length
@@ -65,9 +96,10 @@ export default function ExpenseSheet({ editing }: { editing?: Txn }) {
       split: kind === "group" ? split : [],
       member: kind === "group" ? "" : member,
       spentAt: fromLocalInput(when),
+      receiptAt: editing?.receiptAt ?? 0,
     };
-    if (editing) updateTxn(editing.id, data);
-    else addTxn(data);
+    if (editing) updateTxn(editing.id, data, receipt);
+    else addTxn(data, receipt ?? undefined);
     close();
   };
 
@@ -164,6 +196,41 @@ export default function ExpenseSheet({ editing }: { editing?: Txn }) {
               Now
             </button>
           </div>
+        </div>
+
+        <div className="receipt-row">
+          <label className={`receipt-pick ${hasReceipt ? "on" : ""}`}>
+            {shownReceipt ? <img src={shownReceipt} alt="" /> : <Camera size={18} />}
+            <input
+              type="file"
+              accept="image/*"
+              hidden
+              onChange={(e) => {
+                pickReceipt(e.target.files?.[0]);
+                e.target.value = "";
+              }}
+            />
+          </label>
+          <div className="receipt-side">
+            <b>{hasReceipt ? "Receipt attached" : "Add a receipt"}</b>
+            <small>
+              {shrinking
+                ? "Shrinking the photo…"
+                : hasReceipt
+                ? "Tap the photo to change it"
+                : "Photo of the bill — optional, works offline"}
+            </small>
+          </div>
+          {hasReceipt && (
+            <button
+              type="button"
+              className="mini-btn danger"
+              aria-label="Remove receipt"
+              onClick={() => setReceipt(null)}
+            >
+              <Trash2 size={15} />
+            </button>
+          )}
         </div>
 
         <div className="cat-row">

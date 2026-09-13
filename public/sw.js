@@ -17,6 +17,8 @@
    ============================================================ */
 
 const CACHE = "terra-shell-v2";
+const TILES = "terra-tiles-v1";
+const MAX_TILES = 800; // ~15 MB of map around the places you've looked at
 const OFFLINE_FALLBACK = "/";
 const STATIC_EXTRAS = [
   "/manifest.webmanifest",
@@ -73,7 +75,9 @@ self.addEventListener("activate", (event) => {
     (async () => {
       const keys = await caches.keys();
       await Promise.all(
-        keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))
+        keys
+          .filter((k) => k !== CACHE && k !== TILES && k !== "terra-photos-v1")
+          .map((k) => caches.delete(k))
       );
       await self.clients.claim();
     })()
@@ -88,11 +92,32 @@ self.addEventListener("message", (event) => {
   }
 });
 
+/** Map tiles: keep the ones you've looked at, so the map still shows
+ *  with no signal. Oldest go first once there are too many. */
+async function tile(req) {
+  const cache = await caches.open(TILES);
+  const hit = await cache.match(req);
+  if (hit) return hit;
+  const res = await fetch(req);
+  if (res.ok) {
+    await cache.put(req, res.clone());
+    const keys = await cache.keys();
+    if (keys.length > MAX_TILES) {
+      await Promise.all(keys.slice(0, keys.length - MAX_TILES).map((k) => cache.delete(k)));
+    }
+  }
+  return res;
+}
+
 self.addEventListener("fetch", (event) => {
   const req = event.request;
   if (req.method !== "GET") return;
 
   const url = new URL(req.url);
+  if (url.hostname.endsWith("tile.openstreetmap.org") || url.hostname.endsWith("tile.opentopomap.org")) {
+    event.respondWith(tile(req));
+    return;
+  }
   if (url.origin !== self.location.origin) return; // Supabase & co.
 
   // Page loads: network-first so a redeploy is picked up immediately,

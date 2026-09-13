@@ -1,18 +1,22 @@
 "use client";
 
-import { Users, Receipt, UserPlus, Wallet, PiggyBank } from "lucide-react";
+import { Users, Receipt, UserPlus, Wallet, PiggyBank, Scale, FileText, ChevronRight } from "lucide-react";
 import AppHeader from "../AppHeader";
 import TxnRow from "../TxnRow";
 import { initials } from "../constants";
 import { useStore, useMoney } from "../store";
 import { useUI } from "../ui";
 import { useCountUp, useMounted } from "../hooks";
-import { byWhen } from "../models";
+import { byWhen, settleUp } from "../models";
 
 export default function Expenses() {
-  const { state, totalSpent, pool, balances, selfId, readOnly } = useStore();
+  const { state, trip, totalSpent, pool, balances, selfId, readOnly } = useStore();
   const money = useMoney();
-  const { openSettings, openTransactions } = useUI();
+  const { openSettings, openTransactions, openSettle, openReport } = useUI();
+  const settle = settleUp(state.members, balances, trip?.holderId);
+  const settledCount = settle.lines.filter((l) =>
+    trip?.settled?.[l.from === trip?.holderId ? l.to : l.from]
+  ).length;
 
   const pct = pool > 0 ? Math.min(Math.round((totalSpent / pool) * 100), 100) : 0;
   const self = selfId;
@@ -54,6 +58,36 @@ export default function Expenses() {
           </div>
         )}
       </div>
+
+      {state.members.length > 0 && (
+        <div className="group-actions">
+          <button className="ga-btn" onClick={openSettle}>
+            <span className="ga-ico">
+              <Scale size={19} />
+            </span>
+            <span className="ga-text">
+              <b>Settle up</b>
+              <small>
+                {settle.lines.length === 0
+                  ? "Everyone's square"
+                  : `${settle.lines.length} payment${settle.lines.length > 1 ? "s" : ""}` +
+                    (settledCount ? ` · ${settledCount} done` : "")}
+              </small>
+            </span>
+            <ChevronRight size={16} />
+          </button>
+          <button className="ga-btn" onClick={openReport}>
+            <span className="ga-ico">
+              <FileText size={19} />
+            </span>
+            <span className="ga-text">
+              <b>Tour report</b>
+              <small>PDF · Excel · chat</small>
+            </span>
+            <ChevronRight size={16} />
+          </button>
+        </div>
+      )}
 
       <div className="section-pad">
         <div className="section-head">
