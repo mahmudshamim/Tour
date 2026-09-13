@@ -20,6 +20,7 @@ import {
   type Txn,
   type AuditEntry,
   type Place,
+  type Cover,
 } from "./models";
 import type { TripData } from "./db";
 
@@ -34,7 +35,9 @@ export type Op =
   | { t: "txn.del"; id: string; tripId: string }
   | { t: "audit.put"; v: AuditEntry }
   | { t: "place.put"; v: Place }
-  | { t: "place.del"; id: string; tripId: string };
+  | { t: "place.del"; id: string; tripId: string }
+  | { t: "cover.put"; v: Cover }
+  | { t: "cover.del"; id: string; tripId: string };
 
 export type Entry = { id: string; op: Op; at: number; tries: number };
 
@@ -140,7 +143,14 @@ export function push(op: Op) {
 }
 
 export function remove(entryId: string) {
-  write(read().filter((e) => e.id !== entryId));
+  removeMany([entryId]);
+}
+
+/** Drop a batch that just landed — one write, one notification. */
+export function removeMany(entryIds: string[]) {
+  if (!entryIds.length) return;
+  const gone = new Set(entryIds);
+  write(read().filter((e) => !gone.has(e.id)));
 }
 
 export function bumpTries(entryId: string, tries: number) {
@@ -245,6 +255,17 @@ export function applyTrips(trips: Trip[], entries: Entry[] = read()): Trip[] {
     else if (op.t === "trip.del") out = out.filter((t) => t.id !== op.id);
   }
   return [...out].sort((a, b) => b.createdAt - a.createdAt);
+}
+
+/** Cover photos changed here but not uploaded yet: tripId → photo, or
+ *  null for a removal. These win over whatever the server has. */
+export function pendingCovers(entries: Entry[] = read()): Record<string, string | null> {
+  const out: Record<string, string | null> = {};
+  for (const { op } of entries) {
+    if (op.t === "cover.put") out[op.v.id] = op.v.photo;
+    else if (op.t === "cover.del") out[op.id] = null;
+  }
+  return out;
 }
 
 export function applyPlaces(

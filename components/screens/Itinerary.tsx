@@ -18,11 +18,16 @@ import { useUI } from "../ui";
 
 export default function Itinerary() {
   const { places, toggle, add, update, move, remove, resetDone } = usePlaces();
-  const { state, archived } = useStore();
+  const { trip, readOnly } = useStore();
   const { confirm } = useUI();
   const [newName, setNewName] = useState("");
   const [newIcon, setNewIcon] = useState("pin");
   const [editMode, setEditMode] = useState(false);
+
+  // locked (or archived) mid-edit → drop back to the read-only list
+  useEffect(() => {
+    if (readOnly) setEditMode(false);
+  }, [readOnly]);
 
   const confirmRemove = async (id: string, name: string) => {
     const ok = await confirm({
@@ -52,13 +57,15 @@ export default function Itinerary() {
       <div className="section-pad">
         <div className="section-head tight" style={{ marginTop: 8 }}>
           <div>
-            <div className="section-title">
-              {state.settings.tripName || "Trip Plan"}
+            <div className="section-title">{trip?.name || "Trip Plan"}</div>
+            <div className="ov-sub">
+              {places.length
+                ? `${places.length} place${places.length > 1 ? "s" : ""} to explore`
+                : "No stops planned yet"}
             </div>
-            <div className="ov-sub">{places.length} places to explore</div>
           </div>
           <div className="head-links">
-            {places.length > 0 && !archived && (
+            {places.length > 0 && !readOnly && (
               <button
                 className={`link ${editMode ? "on" : ""}`}
                 onClick={() => setEditMode((e) => !e)}
@@ -74,7 +81,7 @@ export default function Itinerary() {
                 )}
               </button>
             )}
-            {done > 0 && !editMode && !archived && (
+            {done > 0 && !editMode && !readOnly && (
               <button className="link" onClick={resetDone}>
                 <RotateCcw size={14} /> Reset
               </button>
@@ -108,6 +115,7 @@ export default function Itinerary() {
             editMode={editMode}
             isFirst={i === 0}
             isLast={i === places.length - 1}
+            readOnly={readOnly}
             onToggle={() => toggle(p.id)}
             onUpdate={(patch) => update(p.id, patch)}
             onMoveUp={() => move(p.id, -1)}
@@ -117,8 +125,17 @@ export default function Itinerary() {
         ))}
       </div>
 
-      {/* add new place — archived trips stay exactly as they were */}
-      <div className="add-place-card" hidden={archived}>
+      {places.length === 0 && readOnly && (
+        <div className="card list-card">
+          <div className="empty sm">
+            <MapPin size={24} />
+            <p>No stops planned for this tour yet.</p>
+          </div>
+        </div>
+      )}
+
+      {/* add new place — view-only devices and archived tours can't */}
+      <div className="add-place-card" hidden={readOnly}>
         <div className="split-title">Add a place</div>
         <div className="icon-picker">
           {PICKER.map((k) => {
@@ -162,6 +179,7 @@ function PlaceRow({
   editMode,
   isFirst,
   isLast,
+  readOnly,
   onToggle,
   onUpdate,
   onMoveUp,
@@ -173,6 +191,7 @@ function PlaceRow({
   editMode: boolean;
   isFirst: boolean;
   isLast: boolean;
+  readOnly: boolean;
   onToggle: () => void;
   onUpdate: (patch: { name?: string; area?: string }) => void;
   onMoveUp: () => void;
@@ -266,7 +285,7 @@ function PlaceRow({
       className={`place-row rise ${p.done ? "done" : ""}`}
       style={{ animationDelay: `${index * 0.04}s` }}
     >
-      <button className="place-main" onClick={onToggle}>
+      <button className="place-main" onClick={onToggle} disabled={readOnly}>
         <span className="place-ico">
           <Icon size={20} />
         </span>

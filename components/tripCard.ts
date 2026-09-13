@@ -31,7 +31,8 @@ function drawPin(
   ctx: CanvasRenderingContext2D,
   cx: number,
   cy: number,
-  r: number
+  r: number,
+  hole: string
 ) {
   // teardrop body
   ctx.fillStyle = "#ffffff";
@@ -44,8 +45,8 @@ function drawPin(
   ctx.lineTo(cx, cy + r * 2);
   ctx.closePath();
   ctx.fill();
-  // inner hole (matches card green)
-  ctx.fillStyle = "#178a44";
+  // inner hole (matches the card colour)
+  ctx.fillStyle = hole;
   ctx.beginPath();
   ctx.arc(cx, cy, r * 0.42, 0, Math.PI * 2);
   ctx.fill();
@@ -72,8 +73,17 @@ const BN = '"Hind Siliguri", "Noto Sans Bengali", system-ui, sans-serif';
 const EMO =
   '"Apple Color Emoji", "Noto Color Emoji", "Segoe UI Emoji", system-ui';
 
-export async function shareTripCard(opts: { title: string; places: Stop[] }) {
-  const { title, places } = opts;
+export async function shareTripCard(opts: {
+  title: string;
+  places: Stop[];
+  /** hero emoji — the tour's cover */
+  cover: string;
+  /** gradient, dark → light */
+  colors: [string, string];
+  /** e.g. "Cox's Bazar · 12–15 Dec 2026" */
+  subtitle?: string;
+}) {
+  const { title, places, cover, colors, subtitle } = opts;
   const done = places.filter((p) => p.done).length;
   const caption = CAPTIONS[Math.floor(Math.random() * CAPTIONS.length)];
 
@@ -87,9 +97,8 @@ export async function shareTripCard(opts: { title: string; places: Stop[] }) {
 
   // background gradient
   const g = ctx.createLinearGradient(0, 0, W, H);
-  g.addColorStop(0, "#166534");
-  g.addColorStop(0.55, "#15803d");
-  g.addColorStop(1, "#22c55e");
+  g.addColorStop(0, colors[0]);
+  g.addColorStop(1, colors[1]);
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, W, H);
 
@@ -109,9 +118,9 @@ export async function shareTripCard(opts: { title: string; places: Stop[] }) {
   ctx.font = `600 36px ${BN}`;
   ctx.fillText("⛰  TerraExplore", W / 2, 120);
 
-  // hero emoji — tea garden
-  ctx.font = `150px ${EMO}`;
-  ctx.fillText("🍃🍵", W / 2, 400);
+  // hero emoji — the tour's own cover
+  ctx.font = `170px ${EMO}`;
+  ctx.fillText(cover, W / 2, 400);
 
   // title (shrink to fit)
   ctx.fillStyle = "#ffffff";
@@ -126,7 +135,10 @@ export async function shareTripCard(opts: { title: string; places: Stop[] }) {
   // subtitle
   ctx.fillStyle = "rgba(255,255,255,0.92)";
   ctx.font = `46px ${BN}`;
-  ctx.fillText(`${places.length} spots · ${done} explored`, W / 2, 620);
+  let sub = subtitle || `${places.length} spots · ${done} explored`;
+  while (ctx.measureText(sub).width > W - 140 && sub.length > 4)
+    sub = sub.slice(0, -2) + "…";
+  ctx.fillText(sub, W / 2, 620);
 
   // funny caption pill
   ctx.font = `700 52px ${BN}`;
@@ -146,7 +158,7 @@ export async function shareTripCard(opts: { title: string; places: Stop[] }) {
   for (const p of preview) {
     const textW = ctx.measureText(p.name).width;
     const startX = (W - (pinW + gap + textW)) / 2;
-    drawPin(ctx, startX + pinW / 2, y - 16, 15);
+    drawPin(ctx, startX + pinW / 2, y - 16, 15, colors[0]);
     ctx.textAlign = "left";
     ctx.fillStyle = "rgba(255,255,255,0.95)";
     ctx.fillText(p.name, startX + pinW + gap, y);

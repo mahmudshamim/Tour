@@ -1,8 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import { Check, Users, Settings2, User, Wallet } from "lucide-react";
-import { CATEGORIES, type CategoryId } from "../constants";
+import { Check, Users, Settings2, User, Wallet, Lock, CalendarClock } from "lucide-react";
+import {
+  CATEGORIES,
+  txnIcon,
+  guessCategory,
+  toLocalInput,
+  fromLocalInput,
+  type CategoryId,
+} from "../constants";
 import { useStore, type Txn } from "../store";
 import { useUI } from "../ui";
 import type { TxnKind } from "../models";
@@ -14,14 +21,20 @@ const KIND_HINT: Record<TxnKind, string> = {
 };
 
 export default function ExpenseSheet({ editing }: { editing?: Txn }) {
-  const { state, addTxn, updateTxn } = useStore();
-  const { close, openSettings } = useUI();
+  const { state, trip, selfId, readOnly, addTxn, updateTxn } = useStore();
+  const { close, openSettings, openUnlock } = useUI();
   const members = state.members;
-  const symbol = state.settings.currency || "৳";
+  const symbol = trip?.currency || "৳";
 
   const [amount, setAmount] = useState(editing ? String(editing.amount) : "");
   const [title, setTitle] = useState(editing?.title ?? "");
   const [cat, setCat] = useState<CategoryId>(editing?.category ?? "food");
+  // follow the title ("Bus" → Travel) until someone picks a category by hand
+  const [catPicked, setCatPicked] = useState(Boolean(editing));
+  const [when, setWhen] = useState(() =>
+    toLocalInput(editing ? editing.spentAt || editing.createdAt : Date.now())
+  );
+  const TitleIcon = txnIcon(title, cat);
   const [kind, setKind] = useState<TxnKind>(editing?.kind ?? "group");
   const [split, setSplit] = useState<string[]>(
     editing?.kind === "group" && editing.split.length
@@ -29,7 +42,7 @@ export default function ExpenseSheet({ editing }: { editing?: Txn }) {
       : members.map((m) => m.id)
   );
   const [member, setMember] = useState<string>(
-    editing?.member || state.settings.selfId || members[0]?.id || ""
+    editing?.member || selfId || members[0]?.id || ""
   );
 
   const toggleSplit = (id: string) =>
@@ -51,11 +64,29 @@ export default function ExpenseSheet({ editing }: { editing?: Txn }) {
       kind,
       split: kind === "group" ? split : [],
       member: kind === "group" ? "" : member,
+      spentAt: fromLocalInput(when),
     };
     if (editing) updateTxn(editing.id, data);
     else addTxn(data);
     close();
   };
+
+  if (readOnly) {
+    return (
+      <div className="sheet-overlay" onClick={close}>
+        <div className="sheet" onClick={(e) => e.stopPropagation()}>
+          <div className="sheet-grip" />
+          <div className="empty">
+            <Lock size={28} />
+            <p>This tour is view-only here. Unlock editing to add or change expenses.</p>
+            <button className="btn-primary" onClick={() => openUnlock()}>
+              Unlock editing
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (members.length === 0) {
     return (
@@ -101,11 +132,37 @@ export default function ExpenseSheet({ editing }: { editing?: Txn }) {
 
         <div className="field">
           <div className="input">
+            <TitleIcon size={18} />
             <input
-              placeholder="What was it for?"
+              placeholder="What was it for? e.g. Bus, Kacci, চা"
               value={title}
-              onChange={(e) => setTitle(e.target.value)}
+              onChange={(e) => {
+                setTitle(e.target.value);
+                if (!catPicked) {
+                  const guess = guessCategory(e.target.value);
+                  if (guess) setCat(guess);
+                }
+              }}
             />
+          </div>
+        </div>
+
+        <div className="field when-field">
+          <div className="input compact">
+            <CalendarClock size={17} />
+            <input
+              type="datetime-local"
+              value={when}
+              onChange={(e) => e.target.value && setWhen(e.target.value)}
+              aria-label="When"
+            />
+            <button
+              type="button"
+              className="when-now"
+              onClick={() => setWhen(toLocalInput(Date.now()))}
+            >
+              Now
+            </button>
           </div>
         </div>
 
@@ -114,7 +171,10 @@ export default function ExpenseSheet({ editing }: { editing?: Txn }) {
             <button
               key={id}
               className={`cat ${cat === id ? "on" : ""}`}
-              onClick={() => setCat(id)}
+              onClick={() => {
+                setCat(id);
+                setCatPicked(true);
+              }}
             >
               <Icon size={19} />
               {label}

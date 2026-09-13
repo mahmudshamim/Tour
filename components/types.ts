@@ -1,1 +1,1 @@
-export type Tab = "dashboard" | "map" | "itinerary" | "group";
+export type Tab = "tours" | "dashboard" | "map" | "itinerary" | "group";

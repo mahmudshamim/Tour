@@ -1,31 +1,43 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { Share2, Camera, Coffee, Car, Trees, Check, MapPin } from "lucide-react";
+import { Share2, Car, Check, MapPin } from "lucide-react";
 import AppHeader from "../AppHeader";
-import SylhetMap from "../SylhetMap";
+import RouteMap from "../RouteMap";
 import { usePlaces, ICONS } from "../places";
 import { useStore } from "../store";
 import { shareTripCard } from "../tripCard";
+import { accentOf, fmtDateRange } from "../models";
 
-const attractions = [
-  { Icon: Trees, label: "আগুন পাহাড়", top: "16%", left: "20%" },
-  { Icon: Coffee, label: "মালনীছড়া চা বাগান", top: "48%", left: "40%" },
-  { Icon: Camera, label: "রাতারগুল", top: "74%", left: "60%" },
+/** Where the next few stops float along the drawn route. */
+const SPOTS = [
+  { top: "27%", left: "25%" },
+  { top: "49%", left: "47%" },
+  { top: "68%", left: "57%" },
 ];
+
+const clip = (s: string, n = 16) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
 
 export default function MapScreen() {
   const stageRef = useRef<HTMLDivElement>(null);
   const d3Ref = useRef<HTMLDivElement>(null);
   const { places } = usePlaces();
-  const { state } = useStore();
+  const { trip } = useStore();
   const done = places.filter((p) => p.done).length;
   const upcoming = places.filter((p) => !p.done).slice(0, 3);
+  const destination = trip?.destination || trip?.name || "";
 
   const shareTrip = () => {
+    if (!trip) return;
+    const acc = accentOf(trip.accent);
     shareTripCard({
-      title: state.settings.tripName || "সিলেট ট্রিপ",
+      title: trip.name,
       places,
+      cover: trip.cover,
+      colors: [acc.from, acc.to],
+      subtitle: [trip.destination, fmtDateRange(trip.startDate, trip.endDate)]
+        .filter(Boolean)
+        .join(" · "),
     });
   };
 
@@ -76,7 +88,7 @@ export default function MapScreen() {
 
       <div className="map-stage" ref={stageRef}>
         <div className="map-3d" ref={d3Ref}>
-          <SylhetMap className="map-base layer" />
+          <RouteMap className="map-base layer" />
           <div className="layer map-terrain-glow" />
 
           <svg
@@ -106,30 +118,44 @@ export default function MapScreen() {
           <span className="map-pin" style={{ left: "15%", top: "12%" }} />
           <span className="map-pin" style={{ left: "76%", top: "82%" }} />
 
-          {attractions.map((a) => (
-            <span
-              key={a.label}
-              className="attraction"
-              style={{ top: a.top, left: a.left, animationDelay: "2.6s" }}
-            >
-              <span className="a-emoji">
-                <a.Icon size={12} />
+          {upcoming.map((p, i) => {
+            const Icon = ICONS[p.icon] ?? MapPin;
+            return (
+              <span
+                key={p.id}
+                className="attraction"
+                style={{ ...SPOTS[i], animationDelay: "2.6s" }}
+              >
+                <span className="a-emoji">
+                  <Icon size={12} />
+                </span>
+                {clip(p.name)}
               </span>
-              {a.label}
+            );
+          })}
+        </div>
+
+        {destination && (
+          <div className="map-tag">
+            {trip?.cover}{" "}
+            {trip?.origin
+              ? `${clip(trip.origin, 12)} → ${clip(destination, 14)}`
+              : clip(destination, 24)}
+          </div>
+        )}
+
+        {(trip?.distanceKm || trip?.travelTime) && (
+          <div className="map-badge">
+            <span className="dot-car">
+              <Car size={15} />
             </span>
-          ))}
-        </div>
-
-        <div className="map-tag">সিলেট রুট</div>
-
-        <div className="map-badge">
-          <span className="dot-car">
-            <Car size={15} />
-          </span>
-          240 KM
-          <span style={{ opacity: 0.4 }}>|</span>
-          5h drive
-        </div>
+            {trip.distanceKm > 0 && `${trip.distanceKm.toLocaleString("en-US")} KM`}
+            {trip.distanceKm > 0 && trip.travelTime && (
+              <span style={{ opacity: 0.4 }}>|</span>
+            )}
+            {trip.travelTime}
+          </div>
+        )}
       </div>
 
       <div className="route-head">
@@ -153,7 +179,11 @@ export default function MapScreen() {
           <div className="card list-card">
             <div className="empty sm">
               <Check size={26} />
-              <p>All stops explored! 🎉 Add more in Trip Plan.</p>
+              <p>
+                {places.length
+                  ? "All stops explored! 🎉"
+                  : "No stops planned yet — add them in Plan."}
+              </p>
             </div>
           </div>
         ) : (

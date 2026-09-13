@@ -7,8 +7,11 @@ import {
   type Txn,
   type AuditEntry,
   type Place,
+  type AccentId,
+  type Cover,
 } from "./models";
 import * as outbox from "./outbox";
+import * as editLock from "./editLock";
 
 export const dbConfigured = isConfigured;
 
@@ -21,15 +24,25 @@ export type TripData = {
 
 /* ---- row <-> model mapping (snake_case columns) ---- */
 
+// self_id is deliberately not written: "who am I" is per device now, and
+// the server only updates columns that are sent, so the legacy value stays
 const tripToRow = (t: Trip) => ({
   id: t.id,
   name: t.name,
   status: t.status,
   budget: t.budget,
   currency: t.currency,
-  self_id: t.selfId,
   created_at: t.createdAt,
   archived_at: t.archivedAt ?? null,
+  destination: t.destination,
+  origin: t.origin,
+  start_date: t.startDate || null,
+  end_date: t.endDate || null,
+  cover: t.cover,
+  accent: t.accent,
+  note: t.note,
+  distance_km: t.distanceKm || 0,
+  travel_time: t.travelTime,
 });
 const rowToTrip = (r: any): Trip => ({
   id: r.id,
@@ -40,6 +53,17 @@ const rowToTrip = (r: any): Trip => ({
   selfId: r.self_id ?? "",
   createdAt: Number(r.created_at ?? 0),
   archivedAt: r.archived_at ? Number(r.archived_at) : undefined,
+  destination: r.destination ?? "",
+  origin: r.origin ?? "",
+  startDate: r.start_date ?? "",
+  endDate: r.end_date ?? "",
+  // left empty on purpose: withDetails() then picks a cover that fits the
+  // place ("Sylhet" → 🍃) instead of a generic default
+  cover: r.cover ?? "",
+  accent: (r.accent ?? "") as AccentId,
+  note: r.note ?? "",
+  distanceKm: Number(r.distance_km ?? 0),
+  travelTime: r.travel_time ?? "",
 });
 
 const memberToRow = (m: Member) => ({
@@ -68,6 +92,7 @@ const txnToRow = (t: Txn) => ({
   kind: t.kind,
   member: t.member || null,
   split: t.split,
+  spent_at: t.spentAt,
   created_at: t.createdAt,
   updated_at: t.updatedAt,
 });
@@ -80,6 +105,8 @@ const rowToTxn = (r: any): Txn => ({
   kind: (r.kind as Txn["kind"]) ?? "group",
   member: r.member ?? "",
   split: Array.isArray(r.split) ? r.split : [],
+  // rows from before the column existed: spent when they were logged
+  spentAt: Number(r.spent_at ?? r.created_at),
   createdAt: Number(r.created_at),
   updatedAt: Number(r.updated_at),
 });
@@ -169,145 +196,156 @@ export async function loadTripData(
 
 /* ============================================================
    Writes — queued in the outbox, flushed when the network allows.
-   Nothing here talks to Supabase directly; `flush()` owns that.
+   Nothing here writes to a table directly: the tables are read-only
+   for the public key, and every batch goes through `terra_apply`,
+   which checks the edit-lock session token first.
    ============================================================ */
 
-/** Run one queued op against Supabase. Resolves with `{ error }`. */
-function exec(sb: any, op: outbox.Op): Promise<{ error: any }> {
+/** Ops in the shape `terra_apply` expects (snake_case rows). */
+function wire(op: outbox.Op) {
   switch (op.t) {
-    // upsert (not insert) everywhere, so a retry after a partially
-    // applied write can't fail on a duplicate primary key
-    case "member.put":
-      return sb.from("members").upsert(memberToRow(op.v));
-    case "member.del":
-      return sb.from("members").delete().eq("id", op.id);
-    case "txn.put":
-      return sb.from("transactions").upsert(txnToRow(op.v));
-    case "txn.del":
-      return sb.from("transactions").delete().eq("id", op.id);
-    case "audit.put":
-      return sb.from("audit").upsert(auditToRow(op.v));
     case "trip.put":
-      return sb.from("trips").upsert(tripToRow(op.v));
-    case "trip.del":
-      return sb.from("trips").delete().eq("id", op.id);
+      return { t: op.t, v: tripToRow(op.v) };
+    case "member.put":
+      return { t: op.t, v: memberToRow(op.v) };
+    case "txn.put":
+      return { t: op.t, v: txnToRow(op.v) };
+    case "audit.put":
+      return { t: op.t, v: auditToRow(op.v) };
     case "place.put":
-      return sb.from("places").upsert(placeToRow(op.v));
-    case "place.del":
-      return sb.from("places").delete().eq("id", op.id);
+      return { t: op.t, v: placeToRow(op.v) };
+    case "cover.put":
+      return { t: op.t, v: { id: op.v.id, photo: op.v.photo, updated_at: op.v.updatedAt } };
+    default:
+      return { t: op.t, id: op.id };
   }
 }
 
+/**
+ * Why queued writes aren't moving:
+ *  locked        — no/expired edit token; they wait for an unlock
+ *  not-installed — supabase-edit-lock.sql hasn't been run yet
+ *  retrying      — network / server hiccup; tried again on the next sync
+ */
+export type FlushStatus = "ok" | "locked" | "not-installed" | "retrying";
+
+const BATCH = 25;
 let flushing = false;
 
 /**
- * Drain the outbox in order. Stops at the first entry that fails so
- * later writes can't overtake earlier ones; the caller retries later.
- * Never throws.
+ * Drain the outbox in order, a batch at a time. Stops at the first op
+ * the database rejects so later writes can't overtake earlier ones.
+ * Only a real rejection counts towards dropping an op — a flaky signal
+ * on a hill must never be able to throw an expense away. Never throws.
  */
-export async function flush(): Promise<void> {
-  if (flushing) return;
+export async function flush(): Promise<FlushStatus> {
+  if (flushing) return "ok";
   const sb = createClient();
-  if (!sb) return;
-  if (typeof navigator !== "undefined" && navigator.onLine === false) return;
+  if (!sb) return "ok";
+  if (!outbox.count()) return "ok";
+  if (typeof navigator !== "undefined" && navigator.onLine === false)
+    return "retrying";
+  const token = editLock.getToken();
+  if (!token) return "locked";
 
   flushing = true;
   try {
     // eslint-disable-next-line no-constant-condition
     while (true) {
-      const pending = outbox.list();
-      if (!pending.length) return;
-      const entry = pending[0];
+      const batch = outbox.list().slice(0, BATCH);
+      if (!batch.length) return "ok";
 
-      let error: any = null;
+      let res: any = null;
       try {
-        ({ error } = await exec(sb, entry.op));
-      } catch (e: any) {
-        error = e;
+        const { data, error } = await sb.rpc("terra_apply", {
+          p_token: token,
+          p_ops: batch.map((e) => wire(e.op)),
+        });
+        if (error) return editLock.isMissingFn(error) ? "not-installed" : "retrying";
+        res = data;
+      } catch {
+        return "retrying";
       }
 
-      if (!error) {
-        outbox.remove(entry.id);
+      const applied = Math.max(0, Number(res?.applied ?? 0));
+      outbox.removeMany(batch.slice(0, applied).map((e) => e.id));
+      if (res?.ok) continue;
+
+      if (res?.auth === false) {
+        editLock.reject();
+        return "locked";
+      }
+
+      // the database itself refused this op — count it, and park it for
+      // good after MAX_TRIES so one bad row can't wedge the queue
+      const bad = batch[applied];
+      if (!bad) return "retrying";
+      const tries = bad.tries + 1;
+      if (tries >= outbox.MAX_TRIES) {
+        outbox.kill(bad.id, String(res?.error ?? "rejected"));
         continue;
       }
-
-      const tries = entry.tries + 1;
-      if (tries >= outbox.MAX_TRIES) {
-        outbox.kill(entry.id, String(error?.message ?? error));
-        continue; // dead-lettered — keep draining the rest
-      }
-      outbox.bumpTries(entry.id, tries);
-      return; // likely offline / transient — preserve order, retry later
+      outbox.bumpTries(bad.id, tries);
+      return "retrying";
     }
   } finally {
     flushing = false;
   }
 }
 
+/** Local-only installs keep everything in the cache; there's nowhere to
+ *  send writes, so don't let the queue grow forever. */
+const queue = (op: outbox.Op) => {
+  if (dbConfigured) outbox.push(op);
+};
+
 export const db = {
   configured: dbConfigured,
 
-  saveTrip: (t: Trip) => outbox.push({ t: "trip.put", v: t }),
+  saveTrip: (t: Trip) => queue({ t: "trip.put", v: t }),
 
-  insertMember: (m: Member) => outbox.push({ t: "member.put", v: m }),
-  updateMember: (m: Member) => outbox.push({ t: "member.put", v: m }),
+  insertMember: (m: Member) => queue({ t: "member.put", v: m }),
+  updateMember: (m: Member) => queue({ t: "member.put", v: m }),
   deleteMember: (id: string, tripId: string) =>
-    outbox.push({ t: "member.del", id, tripId }),
+    queue({ t: "member.del", id, tripId }),
 
-  insertTxn: (t: Txn) => outbox.push({ t: "txn.put", v: t }),
-  updateTxn: (t: Txn) => outbox.push({ t: "txn.put", v: t }),
+  insertTxn: (t: Txn) => queue({ t: "txn.put", v: t }),
+  updateTxn: (t: Txn) => queue({ t: "txn.put", v: t }),
   deleteTxn: (id: string, tripId: string) =>
-    outbox.push({ t: "txn.del", id, tripId }),
+    queue({ t: "txn.del", id, tripId }),
 
-  insertAudit: (a: AuditEntry) => outbox.push({ t: "audit.put", v: a }),
+  insertAudit: (a: AuditEntry) => queue({ t: "audit.put", v: a }),
 
   /** Used when a new trip copies places from an old one. */
-  insertPlace: (p: Place) => outbox.push({ t: "place.put", v: p }),
+  insertPlace: (p: Place) => queue({ t: "place.put", v: p }),
 
-  /* Bulk, destructive and online-only, so they bypass the queue and
-     purge it: replaying stale ops onto freshly wiped rows would
-     resurrect exactly what was just deleted. */
+  saveCover: (c: Cover) => queue({ t: "cover.put", v: c }),
+  deleteCover: (tripId: string) => queue({ t: "cover.del", id: tripId, tripId }),
 
-  /** Erase one trip and everything under it. Only that trip's queued
-   *  writes are dropped — other trips' pending edits still flush. */
-  async deleteTrip(tripId: string) {
+  /** Erase one trip and everything under it (the server purges the
+   *  children). Queued like any write, so it survives going offline;
+   *  that trip's other pending writes are moot and dropped first. */
+  deleteTrip(tripId: string) {
+    if (!dbConfigured) return;
     outbox.dropTrip(tripId);
-    const sb = createClient();
-    if (!sb) return;
-    await Promise.all([
-      sb.from("audit").delete().eq("trip_id", tripId),
-      sb.from("transactions").delete().eq("trip_id", tripId),
-      sb.from("members").delete().eq("trip_id", tripId),
-      sb.from("places").delete().eq("trip_id", tripId),
-    ]);
-    await sb.from("trips").delete().eq("id", tripId);
+    outbox.push({ t: "trip.del", id: tripId });
   },
 
-  /** Erase every trip. */
-  async clearAll() {
+  /** Erase every trip. Online-only and immediate: replaying stale queued
+   *  ops onto freshly wiped tables would resurrect what was just deleted. */
+  async clearAll(): Promise<boolean> {
+    const sb = createClient();
+    if (!sb) return true;
+    const { data, error } = await sb.rpc("terra_apply", {
+      p_token: editLock.getToken(),
+      p_ops: [{ t: "all.clear" }],
+    });
+    if (error || !data?.ok) {
+      if (data?.auth === false) editLock.reject();
+      return false;
+    }
     outbox.clear();
-    const sb = createClient();
-    if (!sb) return;
-    await Promise.all([
-      sb.from("audit").delete().neq("id", ""),
-      sb.from("transactions").delete().neq("id", ""),
-      sb.from("members").delete().neq("id", ""),
-      sb.from("places").delete().neq("id", ""),
-    ]);
-    await sb.from("trips").delete().neq("id", "");
-  },
-
-  async seed(trip: Trip, data: TripData) {
-    const sb = createClient();
-    if (!sb) return;
-    await this.clearAll();
-    await sb.from("trips").upsert(tripToRow(trip));
-    if (data.members.length)
-      await sb.from("members").insert(data.members.map(memberToRow));
-    if (data.txns.length)
-      await sb.from("transactions").insert(data.txns.map(txnToRow));
-    if (data.audit.length)
-      await sb.from("audit").insert(data.audit.map(auditToRow));
+    return true;
   },
 
   onChange(cb: () => void): () => void {
@@ -321,6 +359,59 @@ export const db = {
       sb.removeChannel(ch);
     };
   },
+};
+
+/* ============================================================
+   Cover photos — a light index first, then only the photos that
+   changed, so a big image is downloaded once per device
+   ============================================================ */
+
+export async function loadCoverIndex(): Promise<
+  { ok: true; index: Record<string, number> } | { ok: false }
+> {
+  const sb = createClient();
+  if (!sb) return { ok: false };
+  const { data, error } = await sb.from("trip_covers").select("id, updated_at");
+  if (error) return { ok: false }; // table not there yet → just no photos
+  const index: Record<string, number> = {};
+  (data ?? []).forEach((r: any) => (index[r.id] = Number(r.updated_at ?? 0)));
+  return { ok: true, index };
+}
+
+export async function loadCover(tripId: string): Promise<string | null> {
+  const sb = createClient();
+  if (!sb) return null;
+  const { data, error } = await sb.from("trip_covers").select("photo").eq("id", tripId);
+  if (error || !data?.length) return null;
+  return String((data[0] as any).photo ?? "") || null;
+}
+
+/* ============================================================
+   Tour stats — what the Tours hub shows for each tour
+   ============================================================ */
+
+export type TripStats = {
+  spent: number; // pool money spent
+  own: number; // own-pocket spend
+  pool: number; // sum of deposits
+  people: number;
+  txns: number;
+  places: number;
+  done: number;
+  first: number; // earliest expense (ms), 0 = none
+  last: number; // latest expense (ms)
+};
+
+export const EMPTY_STATS: TripStats = {
+  spent: 0,
+  own: 0,
+  pool: 0,
+  people: 0,
+  txns: 0,
+  places: 0,
+  done: 0,
+  first: 0,
+  last: 0,
 };
 
 /* ============================================================
@@ -362,16 +453,10 @@ export async function loadPlaces(
 }
 
 export const placesDb = {
-  insert: (p: Place) => outbox.push({ t: "place.put", v: p }),
-  update: (p: Place) => outbox.push({ t: "place.put", v: p }),
-  del: (id: string, tripId: string) =>
-    outbox.push({ t: "place.del", id, tripId }),
+  insert: (p: Place) => queue({ t: "place.put", v: p }),
+  update: (p: Place) => queue({ t: "place.put", v: p }),
+  del: (id: string, tripId: string) => queue({ t: "place.del", id, tripId }),
 
-  async seed(list: Place[]) {
-    const sb = createClient();
-    if (!sb || !list.length) return;
-    await sb.from("places").insert(list.map(placeToRow));
-  },
   onChange(cb: () => void): () => void {
     const sb = createClient();
     if (!sb) return () => {};
