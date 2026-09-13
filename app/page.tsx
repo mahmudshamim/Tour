@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Plus } from "lucide-react";
 import type { Tab } from "@/components/types";
 import { ThemeProvider, useTheme } from "@/components/theme";
@@ -10,6 +10,8 @@ import { UIProvider, useUI } from "@/components/ui";
 import TripMark from "@/components/TripMark";
 import IntroScreen from "@/components/IntroScreen";
 import BottomNav from "@/components/BottomNav";
+import UnlockModal from "@/components/UnlockModal";
+import Tours from "@/components/screens/Tours";
 import MapScreen from "@/components/screens/MapScreen";
 import Dashboard from "@/components/screens/Dashboard";
 import Itinerary from "@/components/screens/Itinerary";
@@ -18,21 +20,34 @@ import SheetHost from "@/components/sheets/SheetHost";
 
 function Shell() {
   const { theme } = useTheme();
-  const { ready, archived } = useStore();
-  const { openAdd } = useUI();
-  const [tab, setTab] = useState<Tab>(() => {
-    if (typeof window !== "undefined") {
-      const h = window.location.hash.replace("#", "");
-      if (["dashboard", "map", "itinerary", "group"].includes(h))
-        return h as Tab;
-    }
-    return "dashboard";
-  });
-  const [introDone, setIntroDone] = useState(
-    () =>
-      typeof window !== "undefined" &&
-      window.location.search.includes("nointro")
-  );
+  const { ready, readOnly, state, archived } = useStore();
+  const { openAdd, tab, setTab, unlockOpen, toastMsg } = useUI();
+  // decided after mount: the server can't see `?nointro` (the installed
+  // PWA's start URL), and guessing differently there breaks hydration
+  const [intro, setIntro] = useState<"pending" | "show" | "done">("pending");
+  useEffect(() => {
+    setIntro(window.location.search.includes("nointro") ? "done" : "show");
+  }, []);
+
+  // Opened with nothing on right now (only past tours)? Start on the Tours
+  // hub — that's where the next tour gets planned. A link that names a tour
+  // or a tab still wins. Read before the store rewrites the URL.
+  const explicitLink = useRef<boolean | null>(null);
+  if (explicitLink.current === null && typeof window !== "undefined") {
+    explicitLink.current =
+      Boolean(window.location.hash) ||
+      new URLSearchParams(window.location.search).has("trip");
+  }
+  const landed = useRef(false);
+  useEffect(() => {
+    if (landed.current || !ready || !state.tripId) return;
+    landed.current = true;
+    if (!explicitLink.current && archived) setTab("tours");
+  }, [ready, state.tripId, archived, setTab]);
+
+  // no tour to look inside yet → the Tours hub is the only screen
+  const noTrip = !state.tripId;
+  const view: Tab = noTrip ? "tours" : tab;
 
   return (
     <main className="stage">
@@ -41,13 +56,14 @@ function Shell() {
 
         {ready ? (
           <>
-            {tab === "dashboard" && <Dashboard />}
-            {tab === "map" && <MapScreen />}
-            {tab === "itinerary" && <Itinerary />}
-            {tab === "group" && <Expenses />}
+            {view === "tours" && <Tours />}
+            {view === "dashboard" && <Dashboard />}
+            {view === "map" && <MapScreen />}
+            {view === "itinerary" && <Itinerary />}
+            {view === "group" && <Expenses />}
 
-            {/* archived trips are read-only — no way in to add anything */}
-            {!archived && (
+            {/* view-only devices and archived trips have no way in to add */}
+            {!readOnly && view !== "tours" && (
               <button
                 className="fab fab-global"
                 onClick={openAdd}
@@ -57,7 +73,7 @@ function Shell() {
               </button>
             )}
 
-            <BottomNav active={tab} onChange={setTab} />
+            <BottomNav active={view} onChange={setTab} noTrip={noTrip} />
             <SheetHost />
           </>
         ) : (
@@ -68,7 +84,13 @@ function Shell() {
           </div>
         )}
 
-        {!introDone && <IntroScreen onDone={() => setIntroDone(true)} />}
+        {unlockOpen && <UnlockModal />}
+        {toastMsg && (
+          <div className="toast" role="status" key={toastMsg}>
+            {toastMsg}
+          </div>
+        )}
+        {intro === "show" && <IntroScreen onDone={() => setIntro("done")} />}
       </div>
     </main>
   );

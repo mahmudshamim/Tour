@@ -7,20 +7,21 @@ import { initials } from "../constants";
 import { useStore, useMoney } from "../store";
 import { useUI } from "../ui";
 import { useCountUp, useMounted } from "../hooks";
+import { byWhen } from "../models";
 
 export default function Expenses() {
-  const { state, totalSpent, pool, balances } = useStore();
+  const { state, totalSpent, pool, balances, selfId, readOnly } = useStore();
   const money = useMoney();
   const { openSettings, openTransactions } = useUI();
 
   const pct = pool > 0 ? Math.min(Math.round((totalSpent / pool) * 100), 100) : 0;
-  const self = state.settings.selfId;
+  const self = selfId;
 
   const mounted = useMounted();
   const aSpent = useCountUp(totalSpent);
 
   const recent = [...state.txns]
-    .sort((a, b) => b.createdAt - a.createdAt)
+    .sort(byWhen)
     .slice(0, 5);
 
   return (
@@ -47,7 +48,9 @@ export default function Expenses() {
           </>
         ) : (
           <div className="hint-line" onClick={openSettings}>
-            Add people with their deposits to build the pool
+            {readOnly
+              ? "No deposits recorded yet"
+              : "Add people with their deposits to build the pool"}
           </div>
         )}
       </div>
@@ -58,7 +61,7 @@ export default function Expenses() {
             <Wallet size={19} /> Member Balances
           </div>
           <button className="link" onClick={openSettings}>
-            <UserPlus size={14} /> Manage
+            <UserPlus size={14} /> {readOnly ? "People" : "Manage"}
           </button>
         </div>
       </div>
@@ -67,10 +70,16 @@ export default function Expenses() {
         <div className="card list-card">
           <div className="empty">
             <Users size={28} />
-            <p>No people yet. Add tripmates and their deposits.</p>
-            <button className="btn-primary" onClick={openSettings}>
-              <UserPlus size={17} /> Add people
-            </button>
+            <p>
+              {readOnly
+                ? "No people on this tour yet."
+                : "No people yet. Add tripmates and their deposits."}
+            </p>
+            {!readOnly && (
+              <button className="btn-primary" onClick={openSettings}>
+                <UserPlus size={17} /> Add people
+              </button>
+            )}
           </div>
         </div>
       ) : (
@@ -161,7 +170,11 @@ export default function Expenses() {
         {recent.length === 0 ? (
           <div className="empty sm">
             <Receipt size={24} />
-            <p>No expenses logged. Use the + button to add one.</p>
+            <p>
+              {readOnly
+                ? "No expenses logged yet."
+                : "No expenses logged. Use the + button to add one."}
+            </p>
           </div>
         ) : (
           recent.map((t, i) => <TxnRow key={t.id} txn={t} index={i} />)

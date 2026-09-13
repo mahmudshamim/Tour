@@ -1,22 +1,26 @@
 "use client";
 
 import type { CSSProperties } from "react";
-import { LayoutGrid, Map, CalendarRange, Users } from "lucide-react";
+import { LayoutGrid, Map, CalendarRange, Users, Luggage } from "lucide-react";
 import type { Tab } from "./types";
 
 const tabs: { id: Tab; label: string; Icon: typeof Map }[] = [
-  { id: "dashboard", label: "Dashboard", Icon: LayoutGrid },
+  { id: "tours", label: "Tours", Icon: Luggage },
+  { id: "dashboard", label: "Overview", Icon: LayoutGrid },
   { id: "map", label: "Map", Icon: Map },
-  { id: "itinerary", label: "Trip Plan", Icon: CalendarRange },
+  { id: "itinerary", label: "Plan", Icon: CalendarRange },
   { id: "group", label: "Group", Icon: Users },
 ];
 
 export default function BottomNav({
   active,
   onChange,
+  noTrip,
 }: {
   active: Tab;
   onChange: (t: Tab) => void;
+  /** nothing to show inside a tour yet → only Tours is useful */
+  noTrip?: boolean;
 }) {
   const idx = tabs.findIndex((t) => t.id === active);
   return (
@@ -30,6 +34,7 @@ export default function BottomNav({
           key={id}
           className={`tab ${active === id ? "active" : ""}`}
           onClick={() => onChange(id)}
+          disabled={noTrip && id !== "tours"}
         >
           <span className="tab-ico">
             <Icon size={21} strokeWidth={active === id ? 2.4 : 2} />

@@ -24,9 +24,9 @@ import {
   Camera,
   type LucideIcon,
 } from "lucide-react";
-import { uid, type Place } from "./models";
+import { uid, placesCacheKey, type Place } from "./models";
 import { dbConfigured, loadPlaces, placesDb } from "./db";
-import { useStore, LEGACY_TRIP_ID } from "./store";
+import { useStore } from "./store";
 import * as outbox from "./outbox";
 
 export type { Place } from "./models";
@@ -59,34 +59,11 @@ export const PICKER = [
   "flag",
 ];
 
-const mk = (
-  id: string,
-  name: string,
-  area: string,
-  icon: string,
-  ord: number
-): Place => ({ id, tripId: LEGACY_TRIP_ID, name, area, icon, ord, done: false });
-
-/** Seeded once, onto the legacy trip only — later trips start empty. */
-const DEFAULTS: Place[] = [
-  mk("ratargul", "রাতারগুল", "Swamp Forest", "trees", 0),
-  mk("bholaganj", "ভোলাগঞ্জ সাদা পাথর", "White Stones", "mountain", 1),
-  mk("lalakhal", "লালা খাল / শাপলা বিল", "Lala Khal", "waves", 2),
-  mk("jaflong", "জাফলং", "Jaflong", "snow", 3),
-  mk("agunpahar", "আগুন পাহাড়", "Agun Pahar", "sunrise", 4),
-  mk("tamabil", "তামাবিল বর্ডার", "Tamabil Border", "flag", 5),
-  mk("mongolia", "মঙ্গোলিয়া টি গার্ডেন", "Tea Garden", "leaf", 6),
-  mk("malnicherra", "মালনীছড়া চা বাগান", "Tea Garden", "sprout", 7),
-  mk("shahjalal", "শাহজালাল (রহ.) মাজার", "Mazar", "landmark", 8),
-  mk("shahporan", "শাহ পরান (রহ.) মাজার", "Mazar", "landmark", 9),
-];
-
-const cacheKey = (tripId: string) => `terra.places.${tripId}.v1`;
 const byOrd = (a: Place, b: Place) => a.ord - b.ord;
 
 function loadCache(tripId: string): Place[] | null {
   try {
-    const raw = localStorage.getItem(cacheKey(tripId));
+    const raw = localStorage.getItem(placesCacheKey(tripId));
     return raw ? (JSON.parse(raw) as Place[]) : null;
   } catch {
     return null;
@@ -94,7 +71,7 @@ function loadCache(tripId: string): Place[] | null {
 }
 function saveCache(tripId: string, list: Place[]) {
   try {
-    localStorage.setItem(cacheKey(tripId), JSON.stringify(list));
+    localStorage.setItem(placesCacheKey(tripId), JSON.stringify(list));
   } catch {
     /* ignore */
   }
@@ -114,9 +91,8 @@ type PlacesCtx = {
 const Ctx = createContext<PlacesCtx | null>(null);
 
 export function PlacesProvider({ children }: { children: ReactNode }) {
-  const { state, archived } = useStore();
+  const { state, readOnly } = useStore();
   const tripId = state.tripId;
-  const isFirstTrip = state.trips.length <= 1 && tripId === LEGACY_TRIP_ID;
 
   const [places, setPlaces] = useState<Place[]>([]);
   const [ready, setReady] = useState(false);
@@ -125,42 +101,33 @@ export function PlacesProvider({ children }: { children: ReactNode }) {
 
   const tripRef = useRef(tripId);
   tripRef.current = tripId;
-  const archivedRef = useRef(archived);
-  archivedRef.current = archived;
+  const readOnlyRef = useRef(readOnly);
+  readOnlyRef.current = readOnly;
+  /** which trip `places` has finished loading for ("" while switching) */
+  const loadedRef = useRef("");
 
   // load: cache first (instant), then Supabase (source of truth) + realtime
   useEffect(() => {
-    if (!tripId) return;
+    if (!tripId) {
+      setPlaces([]);
+      return;
+    }
     let alive = true;
+    loadedRef.current = "";
     const cached = loadCache(tripId);
     setPlaces(cached && cached.length ? [...cached].sort(byOrd) : []);
     setReady(false);
 
-    const seedDefaults = () => {
-      // only the very first trip gets the built-in Sylhet list
-      if (!isFirstTrip) return false;
-      placesDb.seed(DEFAULTS);
-      setPlaces(DEFAULTS);
-      return true;
-    };
-
+    // Every tour starts with an empty plan — nothing is seeded, since
+    // a viewer's device must never write, and each tour is its own place.
     (async () => {
       if (dbConfigured) {
         const res = await loadPlaces(tripId);
-        if (alive && res.ok) {
-          if (res.places.length === 0 && !outbox.count()) {
-            if (!seedDefaults()) setPlaces([]);
-          } else {
-            setPlaces(outbox.applyPlaces(res.places, tripId));
-          }
-        } else if (alive && !res.ok && !(cached && cached.length)) {
-          // table missing / offline → fall back to the local defaults
-          if (!seedDefaults()) setPlaces([]);
-        }
-      } else if (!(cached && cached.length)) {
-        setPlaces(isFirstTrip ? DEFAULTS : []);
+        if (alive && res.ok) setPlaces(outbox.applyPlaces(res.places, tripId));
       }
-      if (alive) setReady(true);
+      if (!alive) return;
+      loadedRef.current = tripId;
+      setReady(true);
     })();
 
     if (!dbConfigured) {
@@ -218,13 +185,14 @@ export function PlacesProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tripId]);
 
-  // mirror to cache on every change
+  // mirror to cache on every change — but only once this trip has loaded:
+  // right after a switch, `places` still holds the previous trip's list
   useEffect(() => {
-    if (ready && tripId) saveCache(tripId, places);
+    if (ready && tripId && loadedRef.current === tripId) saveCache(tripId, places);
   }, [places, ready, tripId]);
 
-  /** Archived trips are frozen. */
-  const guard = () => !archivedRef.current && Boolean(tripRef.current);
+  /** Locked devices and archived trips can't change the plan. */
+  const guard = () => !readOnlyRef.current && Boolean(tripRef.current);
 
   const toggle = useCallback((id: string) => {
     if (!guard()) return;

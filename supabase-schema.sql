@@ -1,6 +1,10 @@
 -- ============================================================
 -- TerraExplore — Supabase schema (no-login, shared dataset)
 -- Run this in Supabase → SQL Editor → New query → Run.
+--
+-- Then run supabase-edit-lock.sql: it adds the per-tour details and
+-- replaces the open policies below with read-only ones, so editing
+-- needs the password.
 -- ============================================================
 
 -- One row per tour. Everything below is scoped to a trip via trip_id;
@@ -80,7 +84,8 @@ create index if not exists places_trip_idx       on public.places (trip_id);
 
 -- ============================================================
 -- Row Level Security — open access for the anon (publishable) key
--- (no login; anyone with the app shares one dataset)
+-- (no login; anyone with the app shares one dataset).
+-- supabase-edit-lock.sql tightens this to read-only.
 -- ============================================================
 alter table public.trips         enable row level security;
 alter table public.members       enable row level security;

@@ -1,21 +1,26 @@
 "use client";
 
-import { Clock, MapPin, Receipt } from "lucide-react";
+import type { CSSProperties } from "react";
+import { MapPin, Receipt, Flag, ChevronRight, CalendarRange, PartyPopper } from "lucide-react";
 import AppHeader from "../AppHeader";
+import CoverArt, { CoverPhoto } from "../CoverArt";
+import { useTourPhoto } from "../covers";
 import TxnRow from "../TxnRow";
-import { IMG } from "../data";
 import { initials } from "../constants";
-import { useStore, useMoney } from "../store";
+import { useStore, useMoney, tripStatsOf } from "../store";
+import { usePlaces, ICONS } from "../places";
 import { useUI } from "../ui";
 import { useCountUp, useMounted } from "../hooks";
+import { accentOf, byWhen, phaseLabel, tourDates, tripPhase } from "../models";
 
 const R = 74;
 const C = 2 * Math.PI * R;
 
 export default function Dashboard() {
-  const { state, totalSpent, pool, balances } = useStore();
+  const { state, trip, totalSpent, pool, balances, readOnly } = useStore();
+  const { places } = usePlaces();
   const money = useMoney();
-  const { openTransactions } = useUI();
+  const { openTransactions, setTab } = useUI();
 
   const budget = pool;
   const pct = budget > 0 ? Math.min(totalSpent / budget, 1) : 0;
@@ -29,23 +34,50 @@ export default function Dashboard() {
   const aRemaining = useCountUp(remaining);
 
   const recent = [...state.txns]
-    .sort((a, b) => b.createdAt - a.createdAt)
+    .sort(byWhen)
     .slice(0, 4);
+
+  const acc = accentOf(trip?.accent);
+  const tint = { "--a1": acc.from, "--a2": acc.to } as CSSProperties;
+  const phase = trip ? phaseLabel(tripPhase(trip)) : "";
+  const { first, last } = tripStatsOf([], state.txns, []);
+  const dates = trip ? tourDates(trip, first, last).text : "";
+  const next = places.find((p) => !p.done);
+  const explored = places.filter((p) => p.done).length;
+  const NextIcon = next ? ICONS[next.icon] ?? MapPin : MapPin;
+  const photo = useTourPhoto(trip);
 
   return (
     <div className="screen fade-in">
-      <AppHeader title="TerraExplore" />
+      <AppHeader title="Overview" />
 
-      <div className="section-pad">
-        <div className="section-head tight" style={{ marginTop: 8 }}>
-          <div>
-            <div className="section-title">Trip Overview</div>
-            {state.settings.tripName && (
-              <div className="ov-sub">{state.settings.tripName}</div>
-            )}
-          </div>
-        </div>
-      </div>
+      {trip && (
+        <button
+          className={`trip-banner rise ${photo ? "has-photo" : ""}`}
+          style={tint}
+          onClick={() => setTab("tours")}
+        >
+          {photo ? (
+            <>
+              <CoverPhoto src={photo} />
+              <span className="cv-shade" />
+            </>
+          ) : (
+            <>
+              <CoverArt cover={trip.cover} className="tb-art" />
+              <span className="tb-emoji">{trip.cover}</span>
+            </>
+          )}
+          <span className="tb-info">
+            <span className="tb-name">{trip.name}</span>
+            <span className="tb-sub">
+              {[trip.destination, dates].filter(Boolean).join(" · ") ||
+                "All tours →"}
+            </span>
+          </span>
+          {phase && <span className="tb-phase">{phase}</span>}
+        </button>
+      )}
 
       <div className="card budget-card">
         <div className="ring-wrap">
@@ -82,7 +114,7 @@ export default function Dashboard() {
         <div className="budget-total">
           <span className="eyebrow">Total Pool</span>
           <div className="amt num">
-            {budget > 0 ? money(aBudget) : "Add deposits"}
+            {budget > 0 ? money(aBudget) : readOnly ? "No deposits yet" : "Add deposits"}
           </div>
         </div>
 
@@ -98,32 +130,68 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <div className="section-pad">
-        <div className="section-head">
-          <div className="section-title">Next Up</div>
-        </div>
-      </div>
-
-      <div className="next-card">
-        <img
-          src={IMG.trek}
-          alt="Sylhet Tea Trails"
-          onError={(e) => (e.currentTarget.style.display = "none")}
-        />
-        <div className="grad" />
-        <div className="next-body">
-          <span className="badge-tag">TEA TRAILS</span>
-          <div className="title">Sylhet Tea Trails</div>
-          <div className="next-meta">
-            <span>
-              <Clock size={13} /> 08:30 AM
-            </span>
-            <span>
-              <MapPin size={13} /> Sylhet
-            </span>
+      {(places.length > 0 || !readOnly) && (
+        <div className="section-pad">
+          <div className="section-head">
+            <div className="section-title">Next Up</div>
+            {places.length > 0 && (
+              <button className="link" onClick={() => setTab("itinerary")}>
+                Plan
+              </button>
+            )}
           </div>
         </div>
-      </div>
+      )}
+
+      {next ? (
+        <button className="next-card" style={tint} onClick={() => setTab("map")}>
+          <span className="next-art">
+            <NextIcon size={120} strokeWidth={1.2} />
+          </span>
+          <div className="grad" />
+          <div className="next-body">
+            <span className="badge-tag">NEXT STOP</span>
+            <div className="title">{next.name}</div>
+            <div className="next-meta">
+              {(next.area || trip?.destination) && (
+                <span>
+                  <MapPin size={13} /> {next.area || trip?.destination}
+                </span>
+              )}
+              <span>
+                <Flag size={13} /> {explored}/{places.length} explored
+              </span>
+            </div>
+          </div>
+        </button>
+      ) : places.length > 0 ? (
+        <div className="next-card done" style={tint}>
+          <span className="next-art">
+            <PartyPopper size={120} strokeWidth={1.2} />
+          </span>
+          <div className="grad" />
+          <div className="next-body">
+            <span className="badge-tag">ALL DONE</span>
+            <div className="title">Every stop explored</div>
+            <div className="next-meta">
+              <span>
+                <Flag size={13} /> {places.length} places
+              </span>
+            </div>
+          </div>
+        </div>
+      ) : (
+        !readOnly && (
+          <button className="plan-cta" onClick={() => setTab("itinerary")}>
+            <CalendarRange size={20} />
+            <span>
+              <b>Plan your stops</b>
+              <small>Add the places you want to see on this tour</small>
+            </span>
+            <ChevronRight size={18} />
+          </button>
+        )
+      )}
 
       {state.members.length > 0 && (
         <>
@@ -193,7 +261,11 @@ export default function Dashboard() {
         {recent.length === 0 ? (
           <div className="empty sm">
             <Receipt size={24} />
-            <p>No expenses yet. Tap + to log your first one.</p>
+            <p>
+              {readOnly
+                ? "No expenses logged yet."
+                : "No expenses yet. Tap + to log your first one."}
+            </p>
           </div>
         ) : (
           recent.map((t, i) => <TxnRow key={t.id} txn={t} index={i} />)

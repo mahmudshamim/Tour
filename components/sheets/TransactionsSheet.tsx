@@ -1,15 +1,27 @@
 "use client";
 
 import { Receipt, History } from "lucide-react";
-import { useStore, useMoney } from "../store";
+import { useStore, useMoney, isPoolTxn, type Txn } from "../store";
 import { useUI } from "../ui";
+import { byWhen } from "../models";
+import { dayKey, fmtDay } from "../constants";
 import TxnRow from "../TxnRow";
 
 export default function TransactionsSheet() {
-  const { state, totalSpent, balances } = useStore();
+  const { state, totalSpent, balances, canEdit } = useStore();
   const money = useMoney();
   const { close, openLog } = useUI();
-  const txns = [...state.txns].sort((a, b) => b.createdAt - a.createdAt);
+  const txns = [...state.txns].sort(byWhen);
+
+  // one block per day, newest first — "Today", "Yesterday", "Sat, 12 Jul"
+  const days: { key: string; at: number; txns: Txn[] }[] = [];
+  txns.forEach((t) => {
+    const at = t.spentAt || t.createdAt;
+    const key = dayKey(at);
+    const last = days[days.length - 1];
+    if (last && last.key === key) last.txns.push(t);
+    else days.push({ key, at, txns: [t] });
+  });
 
   return (
     <div className="sheet-overlay" onClick={close}>
@@ -17,9 +29,11 @@ export default function TransactionsSheet() {
         <div className="sheet-grip" />
         <div className="sheet-head-row">
           <h2>All Transactions</h2>
-          <button className="link" onClick={openLog}>
-            <History size={14} /> Activity log
-          </button>
+          {canEdit && (
+            <button className="link" onClick={openLog}>
+              <History size={14} /> Activity log
+            </button>
+          )}
         </div>
 
         {txns.length === 0 ? (
@@ -42,8 +56,19 @@ export default function TransactionsSheet() {
               </span>
             </div>
             <div className="scroll-list">
-              {txns.map((t) => (
-                <TxnRow key={t.id} txn={t} />
+              {days.map((d) => (
+                <div className="day-block" key={d.key}>
+                  <div className="day-head">
+                    <span>{fmtDay(d.at)}</span>
+                    <i />
+                    <span className="num">
+                      {money(d.txns.reduce((s, t) => (isPoolTxn(t) ? s + t.amount : s), 0))}
+                    </span>
+                  </div>
+                  {d.txns.map((t) => (
+                    <TxnRow key={t.id} txn={t} timeOnly />
+                  ))}
+                </div>
               ))}
             </div>
           </>

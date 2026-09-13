@@ -1,12 +1,12 @@
 "use client";
 
 import { Pencil, Trash2, ArrowRight } from "lucide-react";
-import { catIcon, catLabel, fmtDateTime } from "../constants";
+import { txnIcon, catLabel, fmtDateTime, fmtDay, fmtTime } from "../constants";
 import { useStore, useMoney, type Txn } from "../store";
 import { useUI } from "../ui";
 
 export default function DetailSheet({ txn: initial }: { txn: Txn }) {
-  const { state, archived, deleteTxn, memberById } = useStore();
+  const { state, readOnly, deleteTxn, memberById } = useStore();
   const money = useMoney();
   const { close, openEdit, confirm } = useUI();
 
@@ -16,7 +16,10 @@ export default function DetailSheet({ txn: initial }: { txn: Txn }) {
     .filter((a) => a.txnId === txn.id)
     .sort((a, b) => b.at - a.at);
 
-  const Icon = catIcon(txn.category);
+  const Icon = txnIcon(txn.title, txn.category);
+  const at = txn.spentAt || txn.createdAt;
+  // logged well after it happened (a no-signal day) → say both
+  const loggedLater = Math.abs(txn.createdAt - at) > 10 * 60_000;
   const isGroup = txn.kind === "group";
   const isOwn = txn.kind === "own";
   const chargedTo = memberById(txn.member);
@@ -95,9 +98,17 @@ export default function DetailSheet({ txn: initial }: { txn: Txn }) {
             </div>
           )}
           <div className="dg-cell">
-            <div className="q-lbl">Created</div>
-            <div className="dg-val">{fmtDateTime(txn.createdAt)}</div>
+            <div className="q-lbl">When</div>
+            <div className="dg-val">
+              {fmtDay(at)}, {fmtTime(at)}
+            </div>
           </div>
+          {loggedLater && (
+            <div className="dg-cell">
+              <div className="q-lbl">Logged</div>
+              <div className="dg-val">{fmtDateTime(txn.createdAt)}</div>
+            </div>
+          )}
         </div>
 
         <div className="split-title">History</div>
@@ -139,7 +150,7 @@ export default function DetailSheet({ txn: initial }: { txn: Txn }) {
           ))}
         </div>
 
-        {archived ? (
+        {readOnly ? (
           <button className="btn-primary" onClick={close}>
             Close
           </button>

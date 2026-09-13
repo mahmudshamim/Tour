@@ -6,6 +6,7 @@ import DetailSheet from "./DetailSheet";
 import TransactionsSheet from "./TransactionsSheet";
 import ActivityLogSheet from "./ActivityLogSheet";
 import SettingsSheet from "./SettingsSheet";
+import TripSheet from "./TripSheet";
 import ConfirmModal from "../ConfirmModal";
 
 export default function SheetHost() {
@@ -25,6 +26,8 @@ export default function SheetHost() {
         return <ActivityLogSheet />;
       case "settings":
         return <SettingsSheet />;
+      case "trip":
+        return <TripSheet key={sheet.tripId ?? "new"} tripId={sheet.tripId} />;
       default:
         return null;
     }
